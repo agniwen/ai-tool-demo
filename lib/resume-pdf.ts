@@ -32,6 +32,8 @@ export type ResumeStructuredInfo = {
 
 let workerConfigured = false;
 let pdfParseModulePromise: Promise<typeof import("pdf-parse")> | null = null;
+let pdfParseWorkerModulePromise: Promise<typeof import("pdf-parse/worker")> | null =
+  null;
 
 const ensureDomPolyfills = async () => {
   const globalWithPdfPolyfills = globalThis as Record<string, unknown>;
@@ -63,10 +65,21 @@ const ensureDomPolyfills = async () => {
   }
 };
 
+const loadPdfParseWorkerModule = async (): Promise<
+  typeof import("pdf-parse/worker")
+> => {
+  if (!pdfParseWorkerModulePromise) {
+    pdfParseWorkerModulePromise = import("pdf-parse/worker");
+  }
+
+  return pdfParseWorkerModulePromise;
+};
+
 const loadPdfParseModule = async (): Promise<typeof import("pdf-parse")> => {
   if (!pdfParseModulePromise) {
     pdfParseModulePromise = (async () => {
       await ensureDomPolyfills();
+      await loadPdfParseWorkerModule();
       return import("pdf-parse");
     })();
   }
@@ -74,12 +87,15 @@ const loadPdfParseModule = async (): Promise<typeof import("pdf-parse")> => {
   return pdfParseModulePromise;
 };
 
-const ensurePdfWorker = (PDFParse: (typeof import("pdf-parse"))["PDFParse"]) => {
+const ensurePdfWorker = async (
+  PDFParse: (typeof import("pdf-parse"))["PDFParse"]
+) => {
   if (workerConfigured) {
     return;
   }
 
-  PDFParse.setWorker("pdfjs-dist/legacy/build/pdf.worker.mjs");
+  const { getData } = await loadPdfParseWorkerModule();
+  PDFParse.setWorker(getData());
   workerConfigured = true;
 };
 
@@ -268,7 +284,7 @@ export const parseResumePdf = async (
   file: UploadedResumePdf
 ): Promise<ParsedResumePdf> => {
   const { PDFParse } = await loadPdfParseModule();
-  ensurePdfWorker(PDFParse);
+  await ensurePdfWorker(PDFParse);
 
   const pdfBytes = await readPdfBytes(file.url);
   const parser = new PDFParse({ data: pdfBytes });
