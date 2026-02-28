@@ -18,7 +18,7 @@ import {
 import { z } from "zod";
 
 // Allow streaming responses up to 8 minutes
-export const maxDuration = 480;
+export const maxDuration = 300;
 export const runtime = "nodejs";
 
 const extractUserText = (messages: UIMessage[]): string =>
