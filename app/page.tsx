@@ -64,6 +64,7 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool";
+import { Shimmer } from "@/components/ai-elements/shimmer";
 import {
   CheckIcon,
   CopyIcon,
@@ -76,11 +77,6 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -91,6 +87,12 @@ import {
 import { Button } from "@/components/ui/button";
 
 type MessagePart = UIMessage["parts"][number];
+
+const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
 
 const QUICK_SUGGESTIONS = [
   "给我一个实习生简历筛选的评分标准（100分制）。",
@@ -143,6 +145,25 @@ const toDownloadMessage = (message: UIMessage) => {
     content: fallback,
     role: message.role,
   };
+};
+
+const getMessageTimeText = (message: UIMessage): string | null => {
+  const createdAt = (message as UIMessage & {
+    createdAt?: Date | string | number;
+  }).createdAt;
+
+  if (!createdAt) {
+    return null;
+  }
+
+  const parsed =
+    createdAt instanceof Date ? createdAt : new Date(createdAt);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return timeFormatter.format(parsed);
 };
 
 function ComposerAttachments() {
@@ -220,36 +241,6 @@ function ComposerFooter({
           <PromptInputActionMenuContent>
             <PromptInputActionAddAttachments label="上传 PDF 简历" />
 
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <SettingsIcon className="mr-2 size-4" />
-                招聘设置
-              </DropdownMenuSubTrigger>
-
-              <DropdownMenuSubContent>
-                <PromptInputActionMenuItem
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    onOpenJobDescriptionSettings();
-                  }}
-                >
-                  <FileTextIcon className="mr-2 size-4" />
-                  设置岗位描述（JD）
-                </PromptInputActionMenuItem>
-
-                <PromptInputActionMenuItem
-                  disabled={!hasJobDescription}
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    onClearJobDescription();
-                  }}
-                >
-                  <Trash2Icon className="mr-2 size-4" />
-                  清空岗位描述
-                </PromptInputActionMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-
             <PromptInputActionMenuItem
               onSelect={(event) => {
                 event.preventDefault();
@@ -261,12 +252,40 @@ function ComposerFooter({
             </PromptInputActionMenuItem>
           </PromptInputActionMenuContent>
         </PromptInputActionMenu>
+
+        <PromptInputActionMenu>
+          <PromptInputActionMenuTrigger tooltip="岗位设置">
+            <SettingsIcon className="size-4" />
+          </PromptInputActionMenuTrigger>
+          <PromptInputActionMenuContent>
+            <PromptInputActionMenuItem
+              onSelect={(event) => {
+                event.preventDefault();
+                onOpenJobDescriptionSettings();
+              }}
+            >
+              <FileTextIcon className="mr-2 size-4" />
+              设置岗位描述（JD）
+            </PromptInputActionMenuItem>
+
+            <PromptInputActionMenuItem
+              disabled={!hasJobDescription}
+              onSelect={(event) => {
+                event.preventDefault();
+                onClearJobDescription();
+              }}
+            >
+              <Trash2Icon className="mr-2 size-4" />
+              清空岗位描述
+            </PromptInputActionMenuItem>
+          </PromptInputActionMenuContent>
+        </PromptInputActionMenu>
       </PromptInputTools>
 
       <div className="flex items-center gap-2">
         <span className="hidden text-muted-foreground text-xs sm:inline">
           {status === "streaming"
-            ? "正在分析简历内容..."
+            ? "正在分析简历内容…"
             : hasJobDescription
               ? "已配置岗位描述（JD）"
               : "未配置 JD（可在招聘设置中粘贴）"}
@@ -307,6 +326,9 @@ export default function Home() {
   const hasJobDescription = normalizedJobDescription.length > 0;
 
   const isStreaming = status === "submitted" || status === "streaming";
+  const lastMessage = messages.at(-1);
+  const showAssistantThinkingBubble =
+    isStreaming && lastMessage?.role === "user";
 
   const sendMessageToChat = ({
     files,
@@ -368,28 +390,39 @@ export default function Home() {
   };
 
   return (
-    <main className="mx-auto flex h-dvh w-full max-w-4xl flex-col p-4 sm:p-6">
-      <header className="mb-4">
-        <h1 className="font-semibold text-lg">实习生简历筛选助手</h1>
-        <p className="text-muted-foreground text-sm">
+    <main
+      className="mx-auto flex h-dvh w-full max-w-5xl flex-col px-4 pt-5 pb-4 sm:px-6 sm:pt-8"
+      id="main-content"
+    >
+      <header className="mb-4 px-1 py-2">
+        <h1 className="text-balance font-semibold tracking-tight text-2xl sm:text-3xl">
+          实习生简历筛选助手
+        </h1>
+        <p className="mt-2 max-w-3xl font-serif text-base text-muted-foreground sm:text-lg">
           支持多份简历上传、初筛评分、风险识别与面试推进建议
         </p>
       </header>
 
-      <Suggestions className="mb-3">
-        {QUICK_SUGGESTIONS.map((suggestion) => (
-          <Suggestion
-            disabled={isStreaming}
-            key={suggestion}
-            onClick={(text) => {
-              sendMessageToChat({ text });
-            }}
-            suggestion={suggestion}
-          />
-        ))}
-      </Suggestions>
+      <section className="mb-3">
+        <p className="mb-2 px-1 font-medium text-muted-foreground text-xs">
+          快速提问
+        </p>
+        <Suggestions className="gap-2.5 pb-1">
+          {QUICK_SUGGESTIONS.map((suggestion) => (
+            <Suggestion
+              className="h-auto rounded-2xl border-border/70 bg-card/70 px-4 py-2 text-left text-xs leading-relaxed whitespace-normal hover:bg-accent/50"
+              disabled={isStreaming}
+              key={suggestion}
+              onClick={(text) => {
+                sendMessageToChat({ text });
+              }}
+              suggestion={suggestion}
+            />
+          ))}
+        </Suggestions>
+      </section>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border bg-card">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         <Conversation className="h-full">
           <ConversationContent className="p-4 sm:p-6">
             {messages.length === 0 ? (
@@ -399,7 +432,8 @@ export default function Home() {
                 title="开始筛选实习生简历"
               />
             ) : (
-              messages.map((message, messageIndex) => {
+              <>
+                {messages.map((message, messageIndex) => {
                 const textParts = message.parts.filter(isTextPart);
                 const fileParts = message.parts
                   .map((part, index) => {
@@ -430,9 +464,23 @@ export default function Home() {
                   .map((part) => part.text)
                   .join("\n\n")
                   .trim();
+                const isChatRole =
+                  message.role === "user" || message.role === "assistant";
+                const messageAuthor =
+                  message.role === "assistant" ? "简历筛选助手" : "你";
+                const messageTime = getMessageTimeText(message);
 
-                return (
-                  <div key={message.id}>
+                  return (
+                    <div key={message.id}>
+                    {isChatRole ? (
+                      <p
+                        className={`mb-1 text-muted-foreground text-xs ${message.role === "user" ? "text-right" : "text-left"}`}
+                      >
+                        {messageAuthor}
+                        {messageTime ? ` · ${messageTime}` : ""}
+                      </p>
+                    ) : null}
+
                     {message.role === "assistant" && sourceParts.length > 0 ? (
                       <Sources className="mb-2">
                         <SourcesTrigger count={sourceParts.length} />
@@ -504,7 +552,7 @@ export default function Home() {
                           if (part.type === "step-start") {
                             return (
                               <div
-                                className="my-3 border-border border-t border-dashed"
+                                className="my-3 border-border border-t opacity-50"
                                 key={`${message.id}-step-${index}`}
                               />
                             );
@@ -541,9 +589,29 @@ export default function Home() {
                         </MessageAction>
                       </MessageActions>
                     ) : null}
+                    </div>
+                  );
+                })}
+
+                {showAssistantThinkingBubble ? (
+                  <div>
+                    <p className="mb-1 text-left text-muted-foreground text-xs">
+                      简历筛选助手 · {timeFormatter.format(new Date())}
+                    </p>
+                    <Message from="assistant">
+                      <MessageContent className="px-0 py-1">
+                        <div
+                          aria-label="简历筛选助手正在思考"
+                          className="text-muted-foreground/80"
+                          role="status"
+                        >
+                          <Shimmer duration={1.2}>思考中...</Shimmer>
+                        </div>
+                      </MessageContent>
+                    </Message>
                   </div>
-                );
-              })
+                ) : null}
+              </>
             )}
           </ConversationContent>
 
@@ -553,18 +621,21 @@ export default function Home() {
       </div>
 
       {error ? (
-        <p className="mt-3 text-destructive text-sm">
-          请求失败，请检查 API 配置或稍后重试。
+        <p aria-live="polite" className="mt-3 text-destructive text-sm">
+          请求失败。请检查 API 配置后重试。
         </p>
       ) : null}
 
       {uploadErrorMessage ? (
-        <p className="mt-2 text-destructive text-sm">{uploadErrorMessage}</p>
+        <p aria-live="polite" className="mt-2 text-destructive text-sm">
+          {uploadErrorMessage}
+        </p>
       ) : null}
 
       <PromptInput
         accept="application/pdf"
-        className="mt-4"
+        className="mt-4 [&_[data-slot=input-group]]:rounded-[1.3rem] [&_[data-slot=input-group]]:border-border/65 [&_[data-slot=input-group]]:bg-card/95 [&_[data-slot=input-group]]:shadow-[0_8px_18px_-20px_rgba(60,44,23,0.5)]"
+        maxFiles={8}
         maxFileSize={10 * 1024 * 1024}
         multiple
         onError={({ code }) => {
@@ -574,11 +645,11 @@ export default function Home() {
           }
 
           if (code === "max_file_size") {
-            setUploadErrorMessage("单个 PDF 文件不能超过 10MB。");
+            setUploadErrorMessage("单个 PDF 文件不能超过 10 MB。");
             return;
           }
 
-          setUploadErrorMessage("上传数量超出限制，请减少后重试。");
+          setUploadErrorMessage("最多上传 8 个 PDF 文件。");
         }}
         onSubmit={({ files, text }) => {
           const trimmed = text.trim();
@@ -604,8 +675,9 @@ export default function Home() {
 
         <PromptInputBody>
           <PromptInputTextarea
+            autoComplete="off"
             onChange={(event) => setInput(event.currentTarget.value)}
-            placeholder="输入岗位与筛选要求，或上传实习生 PDF 简历（支持多文件）..."
+            placeholder="输入岗位与筛选要求，或上传实习生 PDF 简历（支持多文件）…"
             value={input}
           />
         </PromptInputBody>
@@ -632,12 +704,23 @@ export default function Home() {
             </DialogDescription>
           </DialogHeader>
 
-          <textarea
-            className="min-h-40 w-full rounded-md border bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            onChange={(event) => setJobDescriptionDraft(event.currentTarget.value)}
-            placeholder="例如：前端开发实习生，要求 React/TypeScript 基础，至少 1 个完整项目经历..."
-            value={jobDescriptionDraft}
-          />
+          <div className="space-y-2">
+            <label className="font-medium text-sm" htmlFor="job-description">
+              岗位描述内容
+            </label>
+            <textarea
+              autoComplete="off"
+              className="min-h-40 w-full rounded-xl border border-border/70 bg-background p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              id="job-description"
+              name="jobDescription"
+              onChange={(event) =>
+                setJobDescriptionDraft(event.currentTarget.value)
+              }
+              placeholder="例如：前端开发实习生，要求 React/TypeScript 基础，至少 1 个完整项目经历…"
+              spellCheck={false}
+              value={jobDescriptionDraft}
+            />
+          </div>
 
           <DialogFooter>
             <Button
@@ -657,7 +740,7 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      <p className="mt-2 flex items-center gap-1 text-muted-foreground text-xs">
+      <p className="mt-2 flex items-center gap-1 px-1 text-muted-foreground text-xs">
         <SparklesIcon className="size-3" />
         当前版本适用于实习生简历初筛，可继续扩展为批量评分与结构化评估报告。
       </p>

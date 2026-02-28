@@ -825,7 +825,7 @@ export const PromptInputBody = ({
   className,
   ...props
 }: PromptInputBodyProps) => (
-  <div className={cn("contents", className)} {...props} />
+  <div className={cn("contents ", className)} {...props} />
 );
 
 export type PromptInputTextareaProps = ComponentProps<
@@ -837,6 +837,7 @@ export const PromptInputTextarea = ({
   onKeyDown,
   className,
   placeholder = "What would you like to know?",
+  rows,
   ...props
 }: PromptInputTextareaProps) => {
   const controller = useOptionalPromptInputController();
@@ -934,13 +935,17 @@ export const PromptInputTextarea = ({
 
   return (
     <InputGroupTextarea
-      className={cn("field-sizing-content max-h-48 min-h-16", className)}
+      className={cn(
+        "field-sizing-content min-h-10 max-h-28 overflow-y-auto",
+        className
+      )}
       name="message"
       onCompositionEnd={handleCompositionEnd}
       onCompositionStart={handleCompositionStart}
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
       placeholder={placeholder}
+      rows={rows ?? 1}
       {...props}
       {...controlledProps}
     />
@@ -958,7 +963,7 @@ export const PromptInputHeader = ({
 }: PromptInputHeaderProps) => (
   <InputGroupAddon
     align="block-end"
-    className={cn("order-first flex-wrap gap-1", className)}
+    className={cn("order-first pb-0! flex-wrap gap-1 empty:hidden", className)}
     {...props}
   />
 );
