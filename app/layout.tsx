@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Source_Sans_3, Source_Serif_4 } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
@@ -45,6 +46,7 @@ export default function RootLayout({
           跳到主要内容
         </a>
         <TooltipProvider>{children}</TooltipProvider>
+        <Analytics />
       </body>
     </html>
   );
