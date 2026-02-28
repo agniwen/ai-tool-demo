@@ -17,8 +17,8 @@ import {
 } from "ai";
 import { z } from "zod";
 
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
+// Allow streaming responses up to 8 minutes
+export const maxDuration = 480;
 export const runtime = "nodejs";
 
 const extractUserText = (messages: UIMessage[]): string =>

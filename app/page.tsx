@@ -94,6 +94,8 @@ const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   hour12: false,
 });
 
+const CHAT_REQUEST_TIMEOUT_MS = 8 * 60 * 1000;
+
 const QUICK_SUGGESTIONS = [
   "给我一个实习生简历筛选的评分标准（100分制）。",
   "我上传了两份简历，请帮我对比并给出推荐顺序。",
@@ -288,7 +290,7 @@ function ComposerFooter({
             ? "正在分析简历内容…"
             : hasJobDescription
               ? "已配置岗位描述（JD）"
-              : "未配置 JD（可在招聘设置中粘贴）"}
+              : "未配置岗位描述（可在岗位设置中配置）"}
         </span>
         <PromptInputSubmit
           disabled={status === "ready" ? !canSubmit : false}
@@ -314,6 +316,33 @@ export default function Home() {
   const { messages, sendMessage, status, stop, error, regenerate } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
+      fetch: async (input, init) => {
+        const timeoutController = new AbortController();
+        const timeoutId = window.setTimeout(() => {
+          timeoutController.abort("Chat request timed out after 8 minutes.");
+        }, CHAT_REQUEST_TIMEOUT_MS);
+
+        if (init?.signal) {
+          if (init.signal.aborted) {
+            timeoutController.abort(init.signal.reason);
+          } else {
+            init.signal.addEventListener(
+              "abort",
+              () => timeoutController.abort(init.signal?.reason),
+              { once: true }
+            );
+          }
+        }
+
+        try {
+          return await fetch(input, {
+            ...init,
+            signal: timeoutController.signal,
+          });
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+      },
     }),
   });
 
@@ -391,14 +420,14 @@ export default function Home() {
 
   return (
     <main
-      className="mx-auto flex h-dvh w-full max-w-5xl flex-col px-4 pt-5 pb-4 sm:px-6 sm:pt-8"
+      className="mx-auto flex h-dvh w-full max-w-5xl flex-col px-4 pt-6 pb-4 sm:px-6 sm:pt-6"
       id="main-content"
     >
       <header className="mb-4 px-1 py-2">
-        <h1 className="text-balance font-semibold tracking-tight text-2xl sm:text-3xl">
+        <h1 className="text-balance font-bold tracking-tight text-2xl sm:text-3xl">
           实习生简历筛选助手
         </h1>
-        <p className="mt-2 max-w-3xl font-serif text-base text-muted-foreground sm:text-lg">
+        <p className="mt-2 max-w-3xl font-serif!  text-sm text-muted-foreground sm:text-base">
           支持多份简历上传、初筛评分、风险识别与面试推进建议
         </p>
       </header>
@@ -410,7 +439,7 @@ export default function Home() {
         <Suggestions className="gap-2.5 pb-1">
           {QUICK_SUGGESTIONS.map((suggestion) => (
             <Suggestion
-              className="h-auto rounded-2xl border-border/70 bg-card/70 px-4 py-2 text-left text-xs leading-relaxed whitespace-normal hover:bg-accent/50"
+              className="h-auto rounded-2xl border-border/70 bg-card/70 px-4 py-2 text-left text-xs leading-relaxed whitespace-normal hover:bg-accent"
               disabled={isStreaming}
               key={suggestion}
               onClick={(text) => {
@@ -427,7 +456,7 @@ export default function Home() {
           <ConversationContent className="p-4 sm:p-6">
             {messages.length === 0 ? (
               <ConversationEmptyState
-                description="上传候选人简历（可多份）或输入筛选要求，助手会给出评分与推荐结论。"
+                description="上传候选人简历（最多 8 份）或输入筛选要求，助手会给出评分与推荐结论。"
                 icon={<MessageSquareIcon className="size-10 text-muted-foreground" />}
                 title="开始筛选实习生简历"
               />

@@ -132,9 +132,11 @@
     @apply text-foreground;
     background-color: var(--background);
     background-image:
-      radial-gradient(circle at 0% 0%, oklch(0.95 0.03 79.2) 0%, transparent 45%),
-      radial-gradient(circle at 100% 10%, oklch(0.96 0.025 65.4) 0%, transparent 30%),
-      linear-gradient(180deg, oklch(0.985 0.01 87.5) 0%, oklch(0.968 0.009 82.9) 100%);
+      radial-gradient(circle at 16% -8%, oklch(0.86 0.075 58.4 / 34%) 0%, transparent 42%),
+      radial-gradient(circle at 48% -16%, oklch(0.9 0.06 72.8 / 30%) 0%, transparent 40%),
+      radial-gradient(circle at 78% -10%, oklch(0.84 0.08 40.2 / 28%) 0%, transparent 44%),
+      radial-gradient(circle at 66% 2%, oklch(0.9 0.055 48.6 / 20%) 0%, transparent 36%),
+      radial-gradient(circle at 30% 4%, oklch(0.92 0.045 66.9 / 18%) 0%, transparent 34%);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     touch-action: manipulation;
