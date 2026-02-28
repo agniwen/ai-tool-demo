@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Internship Resume Screening Chatbot
 
-## Getting Started
+A chat-based application for intern resume screening, built with:
 
-First, run the development server:
+- Next.js (App Router, TypeScript)
+- AI SDK (`useChat` + `streamText`)
+- AI Elements (`conversation`, `message`, `prompt-input`, `attachments`, `tool`, `reasoning`, `sources`, `suggestion`)
+- Gemini provider (`@ai-sdk/google`)
+
+## Included features
+
+- Unified model configuration via `GOOGLE_MODEL` in `.env.local`
+- Upload and analyze multiple resume PDFs
+- Settings menu with Job Description (JD) input for secondary evaluation context
+- Auto-generate a working JD from user intent (e.g. "我需要招聘行政")
+- Resume-screening oriented chat flow with suggestions and actions
+- Tool calling UI (`Tool`) with backend demo screening tools
+- Reasoning and source sections (when provider/model supports them)
+- Conversation export, copy, and regenerate actions
+
+## PDF extraction stack
+
+- `pdf-parse`: extracts text from uploaded resume PDFs server-side
+- `lib/resume-pdf.ts`: reusable parser + structured info extractor
+- Built-in resume tools in `app/api/chat/route.ts`:
+  - `list_uploaded_resume_pdfs`
+  - `extract_resume_pdf_text`
+  - `extract_resume_pdf_structured_info`
+
+## 1) Configure environment variables
+
+Copy the example file:
+
+```bash
+cp .env.example .env.local
+```
+
+Set values in `.env.local`:
+
+- `GOOGLE_GENERATIVE_AI_API_KEY`: your Gemini API key
+- `GOOGLE_MODEL`: optional model id (default `gemini-3-flash-preview`)
+- `GOOGLE_GENERATIVE_AI_BASE_URL`: optional custom endpoint / proxy
+
+## 2) Run locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 3) Useful commands
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint
+npm run build
+```
 
-## Learn More
+## Project structure
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `app/page.tsx`: intern resume screening chat UI powered by AI Elements + `useChat`
+- `app/api/chat/route.ts`: server route using `streamText` + Gemini provider
+- `.env.example`: required env placeholders
