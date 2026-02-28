@@ -1,4 +1,3 @@
-import { PDFParse } from "pdf-parse";
 import type { UIMessage } from "ai";
 
 export type UploadedResumePdf = {
@@ -32,8 +31,50 @@ export type ResumeStructuredInfo = {
 };
 
 let workerConfigured = false;
+let pdfParseModulePromise: Promise<typeof import("pdf-parse")> | null = null;
 
-const ensurePdfWorker = () => {
+const ensureDomPolyfills = async () => {
+  const globalWithPdfPolyfills = globalThis as Record<string, unknown>;
+
+  if (
+    globalWithPdfPolyfills.DOMMatrix &&
+    globalWithPdfPolyfills.ImageData &&
+    globalWithPdfPolyfills.Path2D
+  ) {
+    return;
+  }
+
+  const canvas = await import("@napi-rs/canvas").catch(() => null);
+
+  if (!canvas) {
+    return;
+  }
+
+  if (!globalWithPdfPolyfills.DOMMatrix && canvas.DOMMatrix) {
+    globalWithPdfPolyfills.DOMMatrix = canvas.DOMMatrix;
+  }
+
+  if (!globalWithPdfPolyfills.ImageData && canvas.ImageData) {
+    globalWithPdfPolyfills.ImageData = canvas.ImageData;
+  }
+
+  if (!globalWithPdfPolyfills.Path2D && canvas.Path2D) {
+    globalWithPdfPolyfills.Path2D = canvas.Path2D;
+  }
+};
+
+const loadPdfParseModule = async (): Promise<typeof import("pdf-parse")> => {
+  if (!pdfParseModulePromise) {
+    pdfParseModulePromise = (async () => {
+      await ensureDomPolyfills();
+      return import("pdf-parse");
+    })();
+  }
+
+  return pdfParseModulePromise;
+};
+
+const ensurePdfWorker = (PDFParse: (typeof import("pdf-parse"))["PDFParse"]) => {
   if (workerConfigured) {
     return;
   }
@@ -226,7 +267,8 @@ export const selectUploadedResumePdfs = (
 export const parseResumePdf = async (
   file: UploadedResumePdf
 ): Promise<ParsedResumePdf> => {
-  ensurePdfWorker();
+  const { PDFParse } = await loadPdfParseModule();
+  ensurePdfWorker(PDFParse);
 
   const pdfBytes = await readPdfBytes(file.url);
   const parser = new PDFParse({ data: pdfBytes });
