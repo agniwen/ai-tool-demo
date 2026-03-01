@@ -8,7 +8,14 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-source-sans);
+  --font-sans:
+    var(--font-source-sans),
+    "PingFang SC",
+    "Hiragino Sans GB",
+    var(--font-noto-sans-sc),
+    "Noto Sans CJK SC",
+    "Microsoft YaHei",
+    sans-serif;
   --font-mono: var(--font-ibm-plex-mono);
   --font-serif: var(--font-source-serif);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -152,7 +159,17 @@
   h1,
   h2,
   h3 {
-    font-family: var(--font-source-serif), Georgia, serif;
+    font-family:
+      var(--font-fusion-pixel),
+      "Zpix",
+      "Fusion Pixel 12px Monospaced SC",
+      "PingFang SC",
+      var(--font-noto-sans-sc),
+      monospace;
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: none;
+    text-rendering: geometricPrecision;
+    font-variant-ligatures: none;
   }
 
   ::selection {

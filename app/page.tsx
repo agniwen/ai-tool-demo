@@ -7,15 +7,6 @@ import {
   AttachmentRemove,
   Attachments,
 } from "@/components/ai-elements/attachments";
-import { useChat } from "@ai-sdk/react";
-import {
-  DefaultChatTransport,
-  type ChatStatus,
-  type DynamicToolUIPart,
-  type FileUIPart,
-  type ToolUIPart,
-  type UIMessage,
-} from "ai";
 import {
   Conversation,
   ConversationContent,
@@ -50,6 +41,7 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
+import { Shimmer } from "@/components/ai-elements/shimmer";
 import {
   Source,
   Sources,
@@ -64,21 +56,7 @@ import {
   ToolInput,
   ToolOutput,
 } from "@/components/ai-elements/tool";
-import { Shimmer } from "@/components/ai-elements/shimmer";
-import {
-  CheckIcon,
-  CopyIcon,
-  FileTextIcon,
-  PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-  MessageSquareIcon,
-  PlusIcon,
-  RefreshCcwIcon,
-  SettingsIcon,
-  SparklesIcon,
-  Trash2Icon,
-} from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -87,11 +65,32 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import {
   chatHistoryDB,
   type StoredConversation,
 } from "@/lib/chat-history-db";
+import { useChat } from "@ai-sdk/react";
+import {
+  DefaultChatTransport,
+  type ChatStatus,
+  type DynamicToolUIPart,
+  type FileUIPart,
+  type ToolUIPart,
+  type UIMessage,
+} from "ai";
+import {
+  CheckIcon,
+  CopyIcon,
+  FileTextIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  PlusIcon,
+  RefreshCcwIcon,
+  SettingsIcon,
+  SparklesIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type MessagePart = UIMessage["parts"][number];
 
@@ -113,6 +112,7 @@ const QUICK_SUGGESTIONS = [
 const NEW_CHAT_TITLE = "新对话";
 const GENERATING_CHAT_TITLE = "生成中...";
 const MAX_CHAT_TITLE_LENGTH = 28;
+const SESSION_QUERY_KEY = "session";
 
 const sidebarTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
   month: "2-digit",
@@ -244,6 +244,23 @@ function ComposerAttachments() {
   );
 }
 
+function ResumeScreeningIllustration() {
+  return (
+    <div className="mx-auto w-fit rounded-2xl border border-blue-100/70 bg-white/75 p-2 shadow-[0_16px_32px_-24px_rgba(59,130,246,0.55)] backdrop-blur-sm">
+      <div
+        aria-label="简历筛选插画"
+        className="h-24 w-24 rounded-xl bg-cover bg-center sm:h-28 sm:w-28"
+        role="img"
+        style={{
+          backgroundImage:
+            "url('https://cdn.undraw.co/illustration/recruiter-suggestions_afdd.svg')",
+          filter: "hue-rotate(28deg) saturate(0.88)",
+        }}
+      />
+    </div>
+  );
+}
+
 function ToolPartView({ part }: { part: ToolUIPart | DynamicToolUIPart }) {
   const defaultOpen =
     part.state === "output-available" || part.state === "output-error";
@@ -357,6 +374,7 @@ function ComposerFooter({
 export default function Home() {
   const [input, setInput] = useState("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(
     null
   );
@@ -427,6 +445,26 @@ export default function Home() {
   const lastMessage = messages.at(-1);
   const showAssistantThinkingBubble =
     isStreaming && lastMessage?.role === "user";
+
+  const updateSessionInUrl = useCallback(
+    (sessionId: string | null) => {
+      const params = new URLSearchParams(window.location.search);
+
+      if (sessionId) {
+        params.set(SESSION_QUERY_KEY, sessionId);
+      } else {
+        params.delete(SESSION_QUERY_KEY);
+      }
+
+      const query = params.toString();
+      const nextUrl = query
+        ? `${window.location.pathname}?${query}`
+        : window.location.pathname;
+
+      window.history.replaceState(window.history.state, "", nextUrl);
+    },
+    []
+  );
 
   const refreshConversationList = useCallback(async () => {
     const rows = await chatHistoryDB.conversations
@@ -540,6 +578,7 @@ export default function Home() {
       forcedIsTitleGenerating: withGeneratingTitle,
     });
 
+    updateSessionInUrl(id);
     setActiveConversationId(id);
     return id;
   };
@@ -619,34 +658,63 @@ export default function Home() {
     );
   };
 
-  const startNewConversation = () => {
-    stop();
-    setActiveConversationId(null);
-    setMessages([]);
-    setInput("");
-    setJobDescription("");
-    setJobDescriptionDraft("");
-    setUploadErrorMessage(null);
-    setIsJobDescriptionDialogOpen(false);
-  };
+  const startNewConversation = useCallback(
+    ({
+      shouldSyncUrl = true,
+    }: {
+      shouldSyncUrl?: boolean;
+    } = {}) => {
+      stop();
+      setIsMobileSidebarOpen(false);
+      if (shouldSyncUrl) {
+        updateSessionInUrl(null);
+      }
+      setActiveConversationId(null);
+      setMessages([]);
+      setInput("");
+      setHistoryErrorMessage(null);
+      setJobDescription("");
+      setJobDescriptionDraft("");
+      setUploadErrorMessage(null);
+      setIsJobDescriptionDialogOpen(false);
+    },
+    [stop, updateSessionInUrl, setMessages]
+  );
 
-  const openConversation = async (id: string) => {
-    const conversation = await chatHistoryDB.conversations.get(id);
+  const openConversation = useCallback(
+    async (
+      id: string,
+      {
+        shouldSyncUrl = true,
+      }: {
+        shouldSyncUrl?: boolean;
+      } = {}
+    ) => {
+      const conversation = await chatHistoryDB.conversations.get(id);
 
-    if (!conversation) {
-      await refreshConversationList();
-      return;
-    }
+      if (!conversation) {
+        await refreshConversationList();
+        updateSessionInUrl(null);
+        setHistoryErrorMessage("未找到对应的会话记录，已回到新对话。");
+        return;
+      }
 
-    stop();
-    setActiveConversationId(id);
-    setMessages(conversation.messages);
-    setInput("");
-    setJobDescription(conversation.jobDescription);
-    setJobDescriptionDraft(conversation.jobDescription);
-    setUploadErrorMessage(null);
-    setIsJobDescriptionDialogOpen(false);
-  };
+      stop();
+      setIsMobileSidebarOpen(false);
+      if (shouldSyncUrl) {
+        updateSessionInUrl(id);
+      }
+      setActiveConversationId(id);
+      setMessages(conversation.messages);
+      setInput("");
+      setHistoryErrorMessage(null);
+      setJobDescription(conversation.jobDescription);
+      setJobDescriptionDraft(conversation.jobDescription);
+      setUploadErrorMessage(null);
+      setIsJobDescriptionDialogOpen(false);
+    },
+    [refreshConversationList, stop, updateSessionInUrl, setMessages]
+  );
 
   const deleteConversation = async (id: string) => {
     await chatHistoryDB.conversations.delete(id);
@@ -662,6 +730,16 @@ export default function Home() {
     const bootstrap = async () => {
       try {
         await refreshConversationList();
+        const sessionId =
+          new URLSearchParams(window.location.search)
+            .get(SESSION_QUERY_KEY)
+            ?.trim() ?? null;
+
+        if (sessionId) {
+          await openConversation(sessionId, { shouldSyncUrl: false });
+          return;
+        }
+
         setHistoryErrorMessage(null);
       } catch {
         setHistoryErrorMessage("本地聊天记录不可用，侧边栏将不显示历史记录。");
@@ -671,7 +749,7 @@ export default function Home() {
     };
 
     void bootstrap();
-  }, [refreshConversationList]);
+  }, [openConversation, refreshConversationList]);
 
   useEffect(() => {
     if (!isHistoryReady || !activeConversationId) {
@@ -734,16 +812,31 @@ export default function Home() {
     }
   };
 
+  const showExpandedSidebar = !isSidebarCollapsed || isMobileSidebarOpen;
+
   return (
     <div className="flex h-dvh w-full gap-3  pr-3 sm:pr-6">
+      {isMobileSidebarOpen ? (
+        <button
+          aria-label="关闭聊天记录侧边栏"
+          className="fixed inset-0 z-30 bg-black/18 backdrop-blur-[1px] sm:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+          type="button"
+        />
+      ) : null}
+
       <aside
-        className={`relative flex shrink-0 flex-col overflow-hidden  border-r border-border/75 bg-card/80 shadow-[0_14px_36px_-32px_rgba(78,55,27,0.65)] transition-[width] duration-200 ${
-          isSidebarCollapsed ? "w-14" : "w-[min(76vw,18rem)] sm:w-72"
+        className={`fixed inset-y-0 left-0 z-40 flex w-[min(82vw,20rem)] shrink-0 flex-col overflow-hidden border-r border-border/75 bg-card/95 shadow-[0_14px_36px_-32px_rgba(52,96,168,0.6)] transition-transform duration-200 sm:static sm:z-auto sm:bg-card/80 sm:transition-[width] ${
+          isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full sm:translate-x-0"
+        } ${
+          isSidebarCollapsed ? "sm:w-14" : "sm:w-72"
         }`}
+        id="chat-history-sidebar"
       >
         <div className="flex items-center gap-1 border-border/65 border-b px-2 py-2">
           <Button
             aria-label={isSidebarCollapsed ? "展开聊天侧边栏" : "收起聊天侧边栏"}
+            className="hidden sm:inline-flex"
             onClick={() => setIsSidebarCollapsed((value) => !value)}
             size="icon"
             type="button"
@@ -756,12 +849,12 @@ export default function Home() {
             )}
           </Button>
 
-          {!isSidebarCollapsed ? (
+          {showExpandedSidebar ? (
             <>
               <p className="truncate font-medium text-sm">聊天记录</p>
               <Button
                 className="ml-auto"
-                onClick={startNewConversation}
+                onClick={() => startNewConversation()}
                 size="sm"
                 type="button"
                 variant="outline"
@@ -771,12 +864,23 @@ export default function Home() {
               </Button>
             </>
           ) : null}
+
+          <Button
+            aria-label="关闭聊天记录侧边栏"
+            className="ml-auto sm:hidden"
+            onClick={() => setIsMobileSidebarOpen(false)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <PanelLeftCloseIcon className="size-4" />
+          </Button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
           {isHistoryReady && conversations.length === 0 ? (
             <p className="px-2 py-3 text-muted-foreground text-xs">
-              {isSidebarCollapsed ? "-" : "暂无本地聊天记录"}
+              {showExpandedSidebar ? "暂无本地聊天记录" : "-"}
             </p>
           ) : (
             <ul className="space-y-1">
@@ -803,11 +907,11 @@ export default function Home() {
                         type="button"
                       >
                         <p className="truncate font-medium text-sm">
-                          {isSidebarCollapsed
+                          {!showExpandedSidebar
                             ? visibleTitle.slice(0, 1)
                             : visibleTitle}
                         </p>
-                        {!isSidebarCollapsed ? (
+                        {showExpandedSidebar ? (
                           <p className="mt-1 truncate text-muted-foreground text-xs">
                             {sidebarTimeFormatter.format(
                               new Date(conversation.updatedAt)
@@ -816,7 +920,7 @@ export default function Home() {
                         ) : null}
                       </button>
 
-                      {!isSidebarCollapsed ? (
+                      {showExpandedSidebar ? (
                         <button
                           aria-label="删除聊天记录"
                           className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive group-hover:opacity-100"
@@ -840,7 +944,24 @@ export default function Home() {
 
       <main className="min-w-0 flex-1" id="main-content">
         <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-1 pt-4 pb-2 sm:pb-4 sm:px-2 sm:pt-6">
-      <header className="mb-4 px-1 py-2">
+      <header className="mb-4 px-1 pb-2">
+        <div className="mb-2 flex items-center justify-between gap-2 sm:hidden">
+          <Button
+            aria-controls="chat-history-sidebar"
+            aria-expanded={isMobileSidebarOpen}
+            onClick={() => setIsMobileSidebarOpen(true)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <PanelLeftOpenIcon className="mr-1 size-4" />
+            聊天记录
+          </Button>
+          <Button onClick={() => startNewConversation()} size="sm" type="button" variant="ghost">
+            <PlusIcon className="mr-1 size-4" />
+            新建
+          </Button>
+        </div>
         <h1 className="text-balance font-bold tracking-tight text-2xl sm:text-3xl">
           实习生简历筛选助手
         </h1>
@@ -873,8 +994,8 @@ export default function Home() {
           <ConversationContent className="p-4 sm:p-6">
             {messages.length === 0 ? (
               <ConversationEmptyState
+              className="my-8"
                 description="上传候选人简历（最多 8 份）或输入筛选要求，助手会给出评分与推荐结论。"
-                icon={<MessageSquareIcon className="size-10 text-muted-foreground" />}
                 title="开始筛选实习生简历"
               />
             ) : (
@@ -1086,7 +1207,7 @@ export default function Home() {
 
       <PromptInput
         accept="application/pdf"
-        className="mt-4 [&_[data-slot=input-group]]:rounded-[1.3rem] [&_[data-slot=input-group]]:border-border/65 [&_[data-slot=input-group]]:bg-card/95 [&_[data-slot=input-group]]:shadow-[0_8px_18px_-20px_rgba(60,44,23,0.5)]"
+        className="mt-4  **:data-[slot=input-group]:rounded-[1.3rem] **:data-[slot=input-group]:border-border/65 **:data-[slot=input-group]:bg-white **:data-[slot=input-group]:shadow-[0_8px_18px_-20px_rgba(60,44,23,0.5)]"
         maxFiles={8}
         maxFileSize={10 * 1024 * 1024}
         multiple
@@ -1125,7 +1246,7 @@ export default function Home() {
           <ComposerAttachments />
         </PromptInputHeader>
 
-        <PromptInputBody>
+        <PromptInputBody >
           <PromptInputTextarea
             autoComplete="off"
             onChange={(event) => setInput(event.currentTarget.value)}

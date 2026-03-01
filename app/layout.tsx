@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Source_Sans_3, Source_Serif_4 } from "next/font/google";
+import {
+  IBM_Plex_Mono,
+  Noto_Sans_SC,
+  Source_Sans_3,
+  Source_Serif_4,
+} from "next/font/google";
+import localFont from "next/font/local";
 import { Analytics } from "@vercel/analytics/next";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
@@ -14,6 +20,18 @@ const sourceSerif = Source_Serif_4({
   variable: "--font-source-serif",
   subsets: ["latin"],
   weight: ["400", "600", "700"],
+});
+
+const notoSansSC = Noto_Sans_SC({
+  variable: "--font-noto-sans-sc",
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+});
+
+const fusionPixel = localFont({
+  src: "../public/fonts/fusion-pixel-12px-proportional-zh_hans.ttf.woff2",
+  variable: "--font-fusion-pixel",
+  display: "swap",
 });
 
 const ibmPlexMono = IBM_Plex_Mono({
@@ -37,7 +55,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body
-        className={`${sourceSans.variable} ${sourceSerif.variable} ${ibmPlexMono.variable} min-h-dvh antialiased`}
+        className={`${sourceSans.variable} ${notoSansSC.variable} ${sourceSerif.variable} ${fusionPixel.variable} ${ibmPlexMono.variable} min-h-dvh antialiased`}
       >
         <a
           className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2"
