@@ -69,13 +69,16 @@ import {
   CheckIcon,
   CopyIcon,
   FileTextIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
   MessageSquareIcon,
+  PlusIcon,
   RefreshCcwIcon,
   SettingsIcon,
   SparklesIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -85,6 +88,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  chatHistoryDB,
+  type StoredConversation,
+} from "@/lib/chat-history-db";
 
 type MessagePart = UIMessage["parts"][number];
 
@@ -102,6 +109,23 @@ const QUICK_SUGGESTIONS = [
   "请输出候选人的亮点、风险点和追问问题。",
   "这份简历是否建议进入面试？请给出理由。",
 ];
+
+const NEW_CHAT_TITLE = "新对话";
+const GENERATING_CHAT_TITLE = "生成中...";
+const MAX_CHAT_TITLE_LENGTH = 28;
+
+const sidebarTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+type ConversationListItem = Pick<
+  StoredConversation,
+  "id" | "title" | "updatedAt" | "isTitleGenerating"
+>;
 
 const isTextPart = (
   part: MessagePart
@@ -166,6 +190,34 @@ const getMessageTimeText = (message: UIMessage): string | null => {
   }
 
   return timeFormatter.format(parsed);
+};
+
+const getConversationTitleFromMessages = (
+  messages: UIMessage[],
+  fallbackTitle: string = NEW_CHAT_TITLE
+) => {
+  const firstUserMessage = messages.find((message) => message.role === "user");
+
+  if (!firstUserMessage) {
+    return fallbackTitle;
+  }
+
+  const text = firstUserMessage.parts
+    .filter(isTextPart)
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  if (text.length > 0) {
+    return text.slice(0, MAX_CHAT_TITLE_LENGTH);
+  }
+
+  if (firstUserMessage.parts.some(isFilePart)) {
+    return "含附件对话";
+  }
+
+  return fallbackTitle;
 };
 
 function ComposerAttachments() {
@@ -304,6 +356,15 @@ function ComposerFooter({
 
 export default function Home() {
   const [input, setInput] = useState("");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(
+    null
+  );
+  const [conversations, setConversations] = useState<ConversationListItem[]>([]);
+  const [isHistoryReady, setIsHistoryReady] = useState(false);
+  const [historyErrorMessage, setHistoryErrorMessage] = useState<string | null>(
+    null
+  );
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isJobDescriptionDialogOpen, setIsJobDescriptionDialogOpen] =
     useState(false);
@@ -313,7 +374,15 @@ export default function Home() {
     null
   );
 
-  const { messages, sendMessage, status, stop, error, regenerate } = useChat({
+  const {
+    messages,
+    sendMessage,
+    setMessages,
+    status,
+    stop,
+    error,
+    regenerate,
+  } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
       fetch: async (input, init) => {
@@ -359,13 +428,182 @@ export default function Home() {
   const showAssistantThinkingBubble =
     isStreaming && lastMessage?.role === "user";
 
-  const sendMessageToChat = ({
+  const refreshConversationList = useCallback(async () => {
+    const rows = await chatHistoryDB.conversations
+      .orderBy("createdAt")
+      .reverse()
+      .toArray();
+
+    setConversations(
+      rows.map((item) => ({
+        id: item.id,
+        title: item.title,
+        updatedAt: item.updatedAt,
+        isTitleGenerating: item.isTitleGenerating,
+      }))
+    );
+  }, []);
+
+  const persistConversation = useCallback(async ({
+    id,
+    nextMessages,
+    nextJobDescription,
+    createdAt,
+    forcedTitle,
+    forcedIsTitleGenerating,
+  }: {
+    id: string;
+    nextMessages: UIMessage[];
+    nextJobDescription: string;
+    createdAt?: number;
+    forcedTitle?: string;
+    forcedIsTitleGenerating?: boolean;
+  }) => {
+    const existing = await chatHistoryDB.conversations.get(id);
+    const now = Date.now();
+    const derivedTitle = getConversationTitleFromMessages(
+      nextMessages,
+      existing?.title ?? NEW_CHAT_TITLE
+    );
+    const shouldKeepExistingTitle =
+      typeof existing?.title === "string" && existing.title !== NEW_CHAT_TITLE;
+    const shouldKeepGeneratingTitle =
+      existing?.isTitleGenerating === true && !forcedTitle;
+    const resolvedTitle = forcedTitle
+      ? forcedTitle
+      : shouldKeepGeneratingTitle
+        ? existing?.title ?? GENERATING_CHAT_TITLE
+        : shouldKeepExistingTitle
+          ? existing.title
+          : derivedTitle;
+    const isTitleGenerating =
+      typeof forcedIsTitleGenerating === "boolean"
+        ? forcedIsTitleGenerating
+        : existing?.isTitleGenerating ?? false;
+
+    await chatHistoryDB.conversations.put({
+      id,
+      createdAt: createdAt ?? existing?.createdAt ?? now,
+      updatedAt: now,
+      title: resolvedTitle,
+      isTitleGenerating,
+      messages: nextMessages,
+      jobDescription: nextJobDescription.trim(),
+    });
+
+    await refreshConversationList();
+  }, [refreshConversationList]);
+
+  const updateConversationTitle = useCallback(
+    async (id: string, title: string) => {
+      const conversation = await chatHistoryDB.conversations.get(id);
+
+      if (!conversation) {
+        return;
+      }
+
+      const normalizedTitle = title.trim().slice(0, MAX_CHAT_TITLE_LENGTH);
+
+      if (!normalizedTitle) {
+        return;
+      }
+
+      await chatHistoryDB.conversations.put({
+        ...conversation,
+        title: normalizedTitle,
+        isTitleGenerating: false,
+      });
+
+      await refreshConversationList();
+    },
+    [refreshConversationList]
+  );
+
+  const ensureConversation = async ({
+    withGeneratingTitle,
+  }: {
+    withGeneratingTitle?: boolean;
+  } = {}) => {
+    if (activeConversationId) {
+      return activeConversationId;
+    }
+
+    const id = crypto.randomUUID();
+    const now = Date.now();
+
+    await persistConversation({
+      id,
+      nextMessages: messages,
+      nextJobDescription: jobDescription,
+      createdAt: now,
+      forcedTitle: withGeneratingTitle ? GENERATING_CHAT_TITLE : undefined,
+      forcedIsTitleGenerating: withGeneratingTitle,
+    });
+
+    setActiveConversationId(id);
+    return id;
+  };
+
+  const sendMessageToChat = async ({
     files,
     text,
   }: {
     text: string;
     files?: FileUIPart[];
   }) => {
+    const isFirstMessageForNewConversation =
+      !activeConversationId && messages.length === 0;
+    let conversationId: string | null = activeConversationId;
+
+    try {
+      conversationId = await ensureConversation({
+        withGeneratingTitle: isFirstMessageForNewConversation,
+      });
+      setHistoryErrorMessage(null);
+    } catch {
+      setHistoryErrorMessage("本地聊天记录保存失败，请检查浏览器存储权限。");
+    }
+
+    if (isFirstMessageForNewConversation && conversationId) {
+      const firstMessageText = text.trim();
+
+      if (firstMessageText.length > 0) {
+        void fetch("/api/chat-title", {
+          body: JSON.stringify({
+            hasFiles: Boolean(files?.length),
+            text: firstMessageText,
+          }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        })
+          .then(async (response) => {
+            if (!response.ok) {
+              return null;
+            }
+
+            const payload = (await response.json()) as {
+              title?: string;
+            };
+
+            return payload.title?.trim() ?? null;
+          })
+          .then(async (title) => {
+            if (title) {
+              await updateConversationTitle(conversationId, title);
+              return;
+            }
+
+            await updateConversationTitle(conversationId, NEW_CHAT_TITLE);
+          })
+          .catch(() => {
+            void updateConversationTitle(conversationId, NEW_CHAT_TITLE);
+            setHistoryErrorMessage("会话已创建，但智能标题生成失败。已使用默认标题。");
+          });
+      }
+    }
+
     sendMessage(
       {
         files,
@@ -380,6 +618,84 @@ export default function Home() {
         : undefined
     );
   };
+
+  const startNewConversation = () => {
+    stop();
+    setActiveConversationId(null);
+    setMessages([]);
+    setInput("");
+    setJobDescription("");
+    setJobDescriptionDraft("");
+    setUploadErrorMessage(null);
+    setIsJobDescriptionDialogOpen(false);
+  };
+
+  const openConversation = async (id: string) => {
+    const conversation = await chatHistoryDB.conversations.get(id);
+
+    if (!conversation) {
+      await refreshConversationList();
+      return;
+    }
+
+    stop();
+    setActiveConversationId(id);
+    setMessages(conversation.messages);
+    setInput("");
+    setJobDescription(conversation.jobDescription);
+    setJobDescriptionDraft(conversation.jobDescription);
+    setUploadErrorMessage(null);
+    setIsJobDescriptionDialogOpen(false);
+  };
+
+  const deleteConversation = async (id: string) => {
+    await chatHistoryDB.conversations.delete(id);
+
+    if (id === activeConversationId) {
+      startNewConversation();
+    }
+
+    await refreshConversationList();
+  };
+
+  useEffect(() => {
+    const bootstrap = async () => {
+      try {
+        await refreshConversationList();
+        setHistoryErrorMessage(null);
+      } catch {
+        setHistoryErrorMessage("本地聊天记录不可用，侧边栏将不显示历史记录。");
+      } finally {
+        setIsHistoryReady(true);
+      }
+    };
+
+    void bootstrap();
+  }, [refreshConversationList]);
+
+  useEffect(() => {
+    if (!isHistoryReady || !activeConversationId) {
+      return;
+    }
+
+    const saveTimer = window.setTimeout(() => {
+      void persistConversation({
+        id: activeConversationId,
+        nextMessages: messages,
+        nextJobDescription: jobDescription,
+      }).catch(() => {
+        setHistoryErrorMessage("聊天已继续，但本地记录更新失败。");
+      });
+    }, 250);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [
+    activeConversationId,
+    isHistoryReady,
+    jobDescription,
+    messages,
+    persistConversation,
+  ]);
 
   const openJobDescriptionDialog = () => {
     setJobDescriptionDraft(jobDescription);
@@ -419,10 +735,111 @@ export default function Home() {
   };
 
   return (
-    <main
-      className="mx-auto flex h-dvh w-full max-w-5xl flex-col px-4 pt-6 pb-4 sm:px-6 sm:pt-6"
-      id="main-content"
-    >
+    <div className="flex h-dvh w-full gap-3  pr-3 sm:pr-6">
+      <aside
+        className={`relative flex shrink-0 flex-col overflow-hidden  border-r border-border/75 bg-card/80 shadow-[0_14px_36px_-32px_rgba(78,55,27,0.65)] transition-[width] duration-200 ${
+          isSidebarCollapsed ? "w-14" : "w-[min(76vw,18rem)] sm:w-72"
+        }`}
+      >
+        <div className="flex items-center gap-1 border-border/65 border-b px-2 py-2">
+          <Button
+            aria-label={isSidebarCollapsed ? "展开聊天侧边栏" : "收起聊天侧边栏"}
+            onClick={() => setIsSidebarCollapsed((value) => !value)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            {isSidebarCollapsed ? (
+              <PanelLeftOpenIcon className="size-4" />
+            ) : (
+              <PanelLeftCloseIcon className="size-4" />
+            )}
+          </Button>
+
+          {!isSidebarCollapsed ? (
+            <>
+              <p className="truncate font-medium text-sm">聊天记录</p>
+              <Button
+                className="ml-auto"
+                onClick={startNewConversation}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <PlusIcon className="mr-1 size-3.5" />
+                新建
+              </Button>
+            </>
+          ) : null}
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
+          {isHistoryReady && conversations.length === 0 ? (
+            <p className="px-2 py-3 text-muted-foreground text-xs">
+              {isSidebarCollapsed ? "-" : "暂无本地聊天记录"}
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {conversations.map((conversation) => {
+                const isActive = conversation.id === activeConversationId;
+                const visibleTitle = conversation.isTitleGenerating
+                  ? GENERATING_CHAT_TITLE
+                  : conversation.title;
+
+                return (
+                  <li key={conversation.id}>
+                    <div
+                      className={`group flex items-center gap-1 rounded-xl border border-transparent px-1 py-1 transition-colors ${
+                        isActive
+                          ? "border-border/75 bg-accent/60"
+                          : "hover:bg-accent/40"
+                      }`}
+                    >
+                      <button
+                        className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left"
+                        onClick={() => {
+                          void openConversation(conversation.id);
+                        }}
+                        type="button"
+                      >
+                        <p className="truncate font-medium text-sm">
+                          {isSidebarCollapsed
+                            ? visibleTitle.slice(0, 1)
+                            : visibleTitle}
+                        </p>
+                        {!isSidebarCollapsed ? (
+                          <p className="mt-1 truncate text-muted-foreground text-xs">
+                            {sidebarTimeFormatter.format(
+                              new Date(conversation.updatedAt)
+                            )}
+                          </p>
+                        ) : null}
+                      </button>
+
+                      {!isSidebarCollapsed ? (
+                        <button
+                          aria-label="删除聊天记录"
+                          className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-destructive group-hover:opacity-100"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void deleteConversation(conversation.id);
+                          }}
+                          type="button"
+                        >
+                          <Trash2Icon className="size-3.5" />
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </aside>
+
+      <main className="min-w-0 flex-1" id="main-content">
+        <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-1 pt-4 pb-2 sm:pb-4 sm:px-2 sm:pt-6">
       <header className="mb-4 px-1 py-2">
         <h1 className="text-balance font-bold tracking-tight text-2xl sm:text-3xl">
           实习生简历筛选助手
@@ -443,7 +860,7 @@ export default function Home() {
               disabled={isStreaming}
               key={suggestion}
               onClick={(text) => {
-                sendMessageToChat({ text });
+                void sendMessageToChat({ text });
               }}
               suggestion={suggestion}
             />
@@ -661,6 +1078,12 @@ export default function Home() {
         </p>
       ) : null}
 
+      {historyErrorMessage ? (
+        <p aria-live="polite" className="mt-2 text-destructive text-sm">
+          {historyErrorMessage}
+        </p>
+      ) : null}
+
       <PromptInput
         accept="application/pdf"
         className="mt-4 [&_[data-slot=input-group]]:rounded-[1.3rem] [&_[data-slot=input-group]]:border-border/65 [&_[data-slot=input-group]]:bg-card/95 [&_[data-slot=input-group]]:shadow-[0_8px_18px_-20px_rgba(60,44,23,0.5)]"
@@ -691,7 +1114,7 @@ export default function Home() {
 
           setUploadErrorMessage(null);
 
-          sendMessageToChat({
+          void sendMessageToChat({
             files,
             text: hasText ? trimmed : "请从实习生招聘视角分析这份简历并给出筛选建议。",
           });
@@ -768,11 +1191,12 @@ export default function Home() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <p className="mt-2 flex items-center gap-1 px-1 text-muted-foreground text-xs">
-        <SparklesIcon className="size-3" />
-        当前版本适用于实习生简历初筛，可继续扩展为批量评分与结构化评估报告。
-      </p>
+        <p className="mt-2  hidden sm:flex items-center gap-1 px-1 text-muted-foreground text-xs">
+          <SparklesIcon className="size-3" />
+          受限于vercel免费版本的限制，目前连接仅能持续300秒，注意上传简历的文件大小。
+        </p>
+      </div>
     </main>
+    </div>
   );
 }
