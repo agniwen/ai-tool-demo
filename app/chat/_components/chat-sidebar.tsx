@@ -150,7 +150,7 @@ export default function ChatSidebar() {
   const handleSignIn = useCallback(() => {
     authClient.signIn.social({
       provider: 'google',
-      callbackURL:"/chat"
+      callbackURL: '/chat',
     });
   }, []);
 
@@ -274,7 +274,7 @@ export default function ChatSidebar() {
               <div className='flex items-center gap-2'>
                 {isPending
                   ? (
-                      <div className='size-8 animate-pulse rounded-full bg-muted' />
+                      <div className='h-8 w-full animate-pulse rounded-full bg-muted' />
                     )
                   : session?.user
                     ? (
