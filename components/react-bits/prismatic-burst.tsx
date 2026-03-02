@@ -1,23 +1,24 @@
-"use client";
+'use client';
 
-import React, { useEffect, useRef } from 'react';
-import { Renderer, Program, Mesh, Triangle, Texture } from 'ogl';
+import { Mesh, Program, Renderer, Texture, Triangle } from 'ogl';
+import * as React from 'react';
+import { useEffect, useRef } from 'react';
 
-type Offset = { x?: number | string; y?: number | string };
+interface Offset { x?: number | string, y?: number | string }
 type AnimationType = 'rotate' | 'rotate3d' | 'hover';
 
-export type PrismaticBurstProps = {
-  intensity?: number;
-  speed?: number;
-  animationType?: AnimationType;
-  colors?: string[];
-  distort?: number;
-  paused?: boolean;
-  offset?: Offset;
-  hoverDampness?: number;
-  rayCount?: number;
-  mixBlendMode?: React.CSSProperties['mixBlendMode'] | 'none';
-};
+export interface PrismaticBurstProps {
+  intensity?: number
+  speed?: number
+  animationType?: AnimationType
+  colors?: string[]
+  distort?: number
+  paused?: boolean
+  offset?: Offset
+  hoverDampness?: number
+  rayCount?: number
+  mixBlendMode?: React.CSSProperties['mixBlendMode'] | 'none'
+}
 
 const vertexShader = `#version 300 es
 in vec2 position;
@@ -192,32 +193,36 @@ void main(){
     fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 
-const hexToRgb01 = (hex: string): [number, number, number] => {
+function hexToRgb01(hex: string): [number, number, number] {
   let h = hex.trim();
-  if (h.startsWith('#')) h = h.slice(1);
+  if (h.startsWith('#'))
+    h = h.slice(1);
   if (h.length === 3) {
-    const r = h[0],
-      g = h[1],
-      b = h[2];
+    const r = h[0];
+    const g = h[1];
+    const b = h[2];
     h = r + r + g + g + b + b;
   }
-  const intVal = parseInt(h, 16);
-  if (isNaN(intVal) || (h.length !== 6 && h.length !== 8)) return [1, 1, 1];
+  const intVal = Number.parseInt(h, 16);
+  if (Number.isNaN(intVal) || (h.length !== 6 && h.length !== 8))
+    return [1, 1, 1];
   const r = ((intVal >> 16) & 255) / 255;
   const g = ((intVal >> 8) & 255) / 255;
   const b = (intVal & 255) / 255;
   return [r, g, b];
-};
+}
 
-const toPx = (v: number | string | undefined): number => {
-  if (v == null) return 0;
-  if (typeof v === 'number') return v;
+function toPx(v: number | string | undefined): number {
+  if (v == null)
+    return 0;
+  if (typeof v === 'number')
+    return v;
   const s = String(v).trim();
-  const num = parseFloat(s.replace('px', ''));
-  return isNaN(num) ? 0 : num;
-};
+  const num = Number.parseFloat(s.replace('px', ''));
+  return Number.isNaN(num) ? 0 : num;
+}
 
-const PrismaticBurst = ({
+function PrismaticBurst({
   intensity = 2,
   speed = 0.5,
   animationType = 'rotate3d',
@@ -227,8 +232,8 @@ const PrismaticBurst = ({
   offset = { x: 0, y: 0 },
   hoverDampness = 0,
   rayCount,
-  mixBlendMode = 'lighten'
-}: PrismaticBurstProps) => {
+  mixBlendMode = 'lighten',
+}: PrismaticBurstProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const programRef = useRef<Program | null>(null);
   const rendererRef = useRef<Renderer | null>(null);
@@ -250,16 +255,17 @@ const PrismaticBurst = ({
   }, [hoverDampness]);
   useEffect(() => {
     mixBlendModeRef.current = mixBlendMode;
-    const canvas = containerRef.current?.querySelector("canvas");
+    const canvas = containerRef.current?.querySelector('canvas');
     if (canvas instanceof HTMLCanvasElement) {
-      canvas.style.mixBlendMode =
-        mixBlendMode && mixBlendMode !== "none" ? mixBlendMode : "";
+      canvas.style.mixBlendMode
+        = mixBlendMode && mixBlendMode !== 'none' ? mixBlendMode : '';
     }
   }, [mixBlendMode]);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container)
+      return;
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const renderer = new Renderer({ dpr, alpha: false, antialias: false });
@@ -270,10 +276,10 @@ const PrismaticBurst = ({
     gl.canvas.style.inset = '0';
     gl.canvas.style.width = '100%';
     gl.canvas.style.height = '100%';
-    gl.canvas.style.mixBlendMode =
-      mixBlendModeRef.current && mixBlendModeRef.current !== "none"
+    gl.canvas.style.mixBlendMode
+      = mixBlendModeRef.current && mixBlendModeRef.current !== 'none'
         ? mixBlendModeRef.current
-        : "";
+        : '';
     container.appendChild(gl.canvas);
 
     const white = new Uint8Array([255, 255, 255, 255]);
@@ -282,7 +288,7 @@ const PrismaticBurst = ({
       width: 1,
       height: 1,
       generateMipmaps: false,
-      flipY: false
+      flipY: false,
     });
 
     gradientTex.minFilter = gl.LINEAR;
@@ -307,8 +313,8 @@ const PrismaticBurst = ({
         uOffset: { value: [0, 0] as [number, number] },
         uGradient: { value: gradientTex },
         uNoiseAmount: { value: 0.8 },
-        uRayCount: { value: 0 }
-      }
+        uRayCount: { value: 0 },
+      },
     });
 
     programRef.current = program;
@@ -329,7 +335,8 @@ const PrismaticBurst = ({
     if ('ResizeObserver' in window) {
       ro = new ResizeObserver(resize);
       ro.observe(container);
-    } else {
+    }
+    else {
       (window as Window).addEventListener('resize', resize);
     }
     resize();
@@ -345,10 +352,11 @@ const PrismaticBurst = ({
     let io: IntersectionObserver | null = null;
     if ('IntersectionObserver' in window) {
       io = new IntersectionObserver(
-        entries => {
-          if (entries[0]) isVisibleRef.current = entries[0].isIntersecting;
+        (entries) => {
+          if (entries[0])
+            isVisibleRef.current = entries[0].isIntersecting;
         },
-        { root: null, threshold: 0.01 }
+        { root: null, threshold: 0.01 },
       );
       io.observe(container);
     }
@@ -363,7 +371,8 @@ const PrismaticBurst = ({
       const dt = Math.max(0, now - last) * 0.001;
       last = now;
       const visible = isVisibleRef.current && !document.hidden;
-      if (!pausedRef.current) accumTime += dt;
+      if (!pausedRef.current)
+        accumTime += dt;
       if (!visible) {
         raf = requestAnimationFrame(update);
         return;
@@ -385,12 +394,14 @@ const PrismaticBurst = ({
       cancelAnimationFrame(raf);
       container.removeEventListener('pointermove', onPointer);
       ro?.disconnect();
-      if (!ro) window.removeEventListener('resize', resize);
+      if (!ro)
+        window.removeEventListener('resize', resize);
       io?.disconnect();
       document.removeEventListener('visibilitychange', onVis);
       try {
         container.removeChild(gl.canvas);
-      } catch (e) {
+      }
+      catch (e) {
         void e;
       }
       meshRef.current = null;
@@ -398,8 +409,10 @@ const PrismaticBurst = ({
       programRef.current = null;
       try {
         const glCtx = rendererRef.current?.gl;
-        if (glCtx && gradTexRef.current?.texture) glCtx.deleteTexture(gradTexRef.current.texture);
-      } catch (e) {
+        if (glCtx && gradTexRef.current?.texture)
+          glCtx.deleteTexture(gradTexRef.current.texture);
+      }
+      catch (e) {
         void e;
       }
       rendererRef.current = null;
@@ -411,7 +424,8 @@ const PrismaticBurst = ({
     const program = programRef.current;
     const renderer = rendererRef.current;
     const gradTex = gradTexRef.current;
-    if (!program || !renderer || !gradTex) return;
+    if (!program || !renderer || !gradTex)
+      return;
 
     program.uniforms.uIntensity.value = intensity ?? 1;
     program.uniforms.uSpeed.value = speed ?? 1;
@@ -419,7 +433,7 @@ const PrismaticBurst = ({
     const animTypeMap: Record<AnimationType, number> = {
       rotate: 0,
       rotate3d: 1,
-      hover: 2
+      hover: 2,
     };
     program.uniforms.uAnimType.value = animTypeMap[animationType ?? 'rotate'];
 
@@ -455,13 +469,14 @@ const PrismaticBurst = ({
       gradTex.format = gl.RGBA;
       gradTex.type = gl.UNSIGNED_BYTE;
       gradTex.needsUpdate = true;
-    } else {
+    }
+    else {
       count = 0;
     }
     program.uniforms.uColorCount.value = count;
   }, [intensity, speed, animationType, colors, distort, offset, rayCount]);
 
-  return <div className="w-full h-full relative overflow-hidden" ref={containerRef} />;
-};
+  return <div className='w-full h-full relative overflow-hidden' ref={containerRef} />;
+}
 
 export default PrismaticBurst;

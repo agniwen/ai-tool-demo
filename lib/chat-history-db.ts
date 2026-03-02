@@ -1,23 +1,24 @@
-import Dexie, { type EntityTable } from "dexie";
-import type { UIMessage } from "ai";
+import type { UIMessage } from 'ai';
+import type { EntityTable } from 'dexie';
+import Dexie from 'dexie';
 
-export type StoredConversation = {
-  id: string;
-  title: string;
-  isTitleGenerating?: boolean;
-  createdAt: number;
-  updatedAt: number;
-  jobDescription: string;
-  messages: UIMessage[];
-};
+export interface StoredConversation {
+  id: string
+  title: string
+  isTitleGenerating?: boolean
+  createdAt: number
+  updatedAt: number
+  jobDescription: string
+  messages: UIMessage[]
+}
 
 class ChatHistoryDB extends Dexie {
-  conversations!: EntityTable<StoredConversation, "id">;
+  conversations!: EntityTable<StoredConversation, 'id'>;
 
   constructor() {
-    super("chat-history-db");
+    super('chat-history-db');
     this.version(1).stores({
-      conversations: "&id, updatedAt, createdAt",
+      conversations: '&id, updatedAt, createdAt',
     });
   }
 }

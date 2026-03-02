@@ -804,7 +804,7 @@ export default function ChatPageClient({
           </Button>
         </div>
         <h1 className="pixel-title text-balance font-bold tracking-tight text-2xl sm:text-3xl">
-          实习生简历筛选助手
+          简历筛选助手
         </h1>
         <p className="mt-2 max-w-3xl font-serif!  text-xs text-muted-foreground sm:text-sm">
           支持多份简历上传、初筛评分、风险识别与面试推进建议
