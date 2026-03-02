@@ -2,36 +2,24 @@
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import {
-  ChevronRightIcon,
   LogOutIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   PlusIcon,
   Trash2Icon,
   UserIcon,
-  Settings2Icon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { authClient } from '@/lib/auth-client';
 import { chatHistoryDB } from '@/lib/chat-history-db';
 import { cn } from '@/lib/utils';
@@ -162,7 +150,7 @@ export default function ChatSidebar() {
   const handleSignIn = useCallback(() => {
     authClient.signIn.social({
       provider: 'google',
-      callbackURL: '/chat',
+      callbackURL:"/chat"
     });
   }, []);
 
@@ -286,27 +274,31 @@ export default function ChatSidebar() {
               <div className='flex items-center gap-2'>
                 {isPending
                   ? (
-                      <div className='flex size-9 animate-pulse items-center justify-center rounded-full bg-muted' />
+                      <div className='size-8 animate-pulse rounded-full bg-muted' />
                     )
                   : session?.user
                     ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
-                              className='w-full justify-start gap-2 px-2 py-1.5'
+                              className='w-full justify-start gap-2 px-2'
                               size='sm'
                               type='button'
                               variant='ghost'
                             >
-                              <Avatar className='size-8'>
-                                <AvatarImage
-                                  alt={session.user.name ?? '用户头像'}
-                                  src={session.user.image ?? undefined}
-                                />
-                                <AvatarFallback className='bg-primary/10 text-primary text-xs font-medium'>
-                                  {session.user.name?.charAt(0).toUpperCase() ?? 'U'}
-                                </AvatarFallback>
-                              </Avatar>
+                              <div className='bg-primary/10 flex size-8 shrink-0 items-center justify-center rounded-full'>
+                                {session.user.image
+                                  ? (
+                                      <img
+                                        alt={session.user.name ?? '用户头像'}
+                                        className='size-full rounded-full object-cover'
+                                        src={session.user.image}
+                                      />
+                                    )
+                                  : (
+                                      <UserIcon className='size-4' />
+                                    )}
+                              </div>
                               <div className='min-w-0 flex-1 text-left'>
                                 <p className='truncate font-medium text-sm'>
                                   {session.user.name ?? '用户'}
@@ -315,39 +307,15 @@ export default function ChatSidebar() {
                                   {session.user.email ?? ''}
                                 </p>
                               </div>
-                              <ChevronRightIcon className='size-4 shrink-0 text-muted-foreground' />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align='end' className='w-52'>
-                            <DropdownMenuLabel className='font-normal'>
-                              <div className='flex flex-col gap-1'>
-                                <p className='font-medium text-sm'>{session.user.name ?? '用户'}</p>
-                                <p className='text-muted-foreground text-xs'>
-                                  {session.user.email ?? ''}
-                                </p>
-                              </div>
-                            </DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuGroup>
-                              <DropdownMenuItem>
-                                <UserIcon className='mr-2 size-4' />
-                                个人资料
-                                <DropdownMenuShortcut>⌘P</DropdownMenuShortcut>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>
-                                <Settings2Icon className='mr-2 size-4' />
-                                设置
-                                <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
-                              </DropdownMenuItem>
-                            </DropdownMenuGroup>
-                            <DropdownMenuSeparator />
+                          <DropdownMenuContent align='end' className='w-48'>
                             <DropdownMenuItem
                               className='text-destructive focus:text-destructive'
                               onClick={handleSignOut}
                             >
                               <LogOutIcon className='mr-2 size-4' />
                               退出登录
-                              <DropdownMenuShortcut>⌘Q</DropdownMenuShortcut>
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -388,80 +356,26 @@ export default function ChatSidebar() {
               </div>
             )
           : (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    {session?.user
-                      ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                aria-label='用户菜单'
-                                className='w-full'
-                                size='icon'
-                                type='button'
-                                variant='ghost'
-                              >
-                                <Avatar className='size-8'>
-                                  <AvatarImage
-                                    alt={session.user.name ?? '用户头像'}
-                                    src={session.user.image ?? undefined}
-                                  />
-                                  <AvatarFallback className='bg-primary/10 text-primary text-xs'>
-                                    {session.user.name?.charAt(0).toUpperCase() ?? 'U'}
-                                  </AvatarFallback>
-                                </Avatar>
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align='end' className='w-52'>
-                              <DropdownMenuLabel className='font-normal'>
-                                <div className='flex flex-col gap-1'>
-                                  <p className='font-medium text-sm'>{session.user.name ?? '用户'}</p>
-                                  <p className='text-muted-foreground text-xs'>
-                                    {session.user.email ?? ''}
-                                  </p>
-                                </div>
-                              </DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuGroup>
-                                <DropdownMenuItem>
-                                  <UserIcon className='mr-2 size-4' />
-                                  个人资料
-                                </DropdownMenuItem>
-                                <DropdownMenuItem>
-                                  <Settings2Icon className='mr-2 size-4' />
-                                  设置
-                                </DropdownMenuItem>
-                              </DropdownMenuGroup>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className='text-destructive focus:text-destructive'
-                                onClick={handleSignOut}
-                              >
-                                <LogOutIcon className='mr-2 size-4' />
-                                退出登录
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )
-                      : (
-                          <Button
-                            aria-label='登录'
-                            className='w-full'
-                            onClick={handleSignIn}
-                            size='icon'
-                            type='button'
-                            variant='ghost'
-                          >
-                            <UserIcon className='size-4' />
-                          </Button>
-                        )}
-                  </TooltipTrigger>
-                  <TooltipContent side='right'>
-                    <p>{session?.user ? '用户菜单' : '登录'}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <Button
+                aria-label={session?.user ? '用户菜单' : '登录'}
+                className='w-full'
+                onClick={session?.user ? handleSignOut : handleSignIn}
+                size='icon'
+                type='button'
+                variant='ghost'
+              >
+                {session?.user?.image
+                  ? (
+                      <img
+                        alt={session.user.name ?? '用户头像'}
+                        className='size-6 rounded-full'
+                        src={session.user.image}
+                      />
+                    )
+                  : (
+                      <UserIcon className='size-4' />
+                    )}
+              </Button>
             )}
       </div>
     </aside>
