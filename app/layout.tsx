@@ -41,9 +41,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "实习生简历筛选助手",
+  title: "简历筛选助手",
   description:
-    "面向实习生招聘场景的聊天式简历初筛应用，支持上传简历并生成筛选建议。",
+    "面向招聘场景的聊天式简历初筛应用，支持上传简历并生成筛选建议。",
   themeColor: "#f2f8ff",
 };
 
