@@ -1,52 +1,52 @@
-import type { UIMessage } from "ai";
+import type { UIMessage } from 'ai';
 
-export type UploadedResumePdf = {
-  id: string;
-  filename: string;
-  mediaType: string;
-  url: string;
-};
+export interface UploadedResumePdf {
+  id: string
+  filename: string
+  mediaType: string
+  url: string
+}
 
-export type ParsedResumePdf = {
-  filename: string;
-  id: string;
-  pageCount: number;
-  text: string;
-  totalTextChars: number;
-};
+export interface ParsedResumePdf {
+  filename: string
+  id: string
+  pageCount: number
+  text: string
+  totalTextChars: number
+}
 
-export type ResumeStructuredInfo = {
-  candidateName: string | null;
-  degree: string | null;
-  education: string | null;
-  email: string | null;
-  graduationYear: string | null;
-  internshipHighlights: string[];
-  links: string[];
-  major: string | null;
-  phone: string | null;
-  projectHighlights: string[];
-  school: string | null;
-  skills: string[];
-};
+export interface ResumeStructuredInfo {
+  candidateName: string | null
+  degree: string | null
+  education: string | null
+  email: string | null
+  graduationYear: string | null
+  internshipHighlights: string[]
+  links: string[]
+  major: string | null
+  phone: string | null
+  projectHighlights: string[]
+  school: string | null
+  skills: string[]
+}
 
 let workerConfigured = false;
-let pdfParseModulePromise: Promise<typeof import("pdf-parse")> | null = null;
-let pdfParseWorkerModulePromise: Promise<typeof import("pdf-parse/worker")> | null =
-  null;
+let pdfParseModulePromise: Promise<typeof import('pdf-parse')> | null = null;
+let pdfParseWorkerModulePromise: Promise<typeof import('pdf-parse/worker')> | null
+  = null;
 
-const ensureDomPolyfills = async () => {
+async function ensureDomPolyfills() {
   const globalWithPdfPolyfills = globalThis as Record<string, unknown>;
 
   if (
-    globalWithPdfPolyfills.DOMMatrix &&
-    globalWithPdfPolyfills.ImageData &&
-    globalWithPdfPolyfills.Path2D
+    globalWithPdfPolyfills.DOMMatrix
+    && globalWithPdfPolyfills.ImageData
+    && globalWithPdfPolyfills.Path2D
   ) {
     return;
   }
 
-  const canvas = await import("@napi-rs/canvas").catch(() => null);
+  const canvas = await import('@napi-rs/canvas').catch(() => null);
 
   if (!canvas) {
     return;
@@ -63,33 +63,31 @@ const ensureDomPolyfills = async () => {
   if (!globalWithPdfPolyfills.Path2D && canvas.Path2D) {
     globalWithPdfPolyfills.Path2D = canvas.Path2D;
   }
-};
+}
 
-const loadPdfParseWorkerModule = async (): Promise<
-  typeof import("pdf-parse/worker")
-> => {
+async function loadPdfParseWorkerModule(): Promise<
+  typeof import('pdf-parse/worker')
+> {
   if (!pdfParseWorkerModulePromise) {
-    pdfParseWorkerModulePromise = import("pdf-parse/worker");
+    pdfParseWorkerModulePromise = import('pdf-parse/worker');
   }
 
   return pdfParseWorkerModulePromise;
-};
+}
 
-const loadPdfParseModule = async (): Promise<typeof import("pdf-parse")> => {
+async function loadPdfParseModule(): Promise<typeof import('pdf-parse')> {
   if (!pdfParseModulePromise) {
     pdfParseModulePromise = (async () => {
       await ensureDomPolyfills();
       await loadPdfParseWorkerModule();
-      return import("pdf-parse");
+      return import('pdf-parse');
     })();
   }
 
   return pdfParseModulePromise;
-};
+}
 
-const ensurePdfWorker = async (
-  PDFParse: (typeof import("pdf-parse"))["PDFParse"]
-) => {
+async function ensurePdfWorker(PDFParse: (typeof import('pdf-parse'))['PDFParse']) {
   if (workerConfigured) {
     return;
   }
@@ -97,19 +95,20 @@ const ensurePdfWorker = async (
   const { getData } = await loadPdfParseWorkerModule();
   PDFParse.setWorker(getData());
   workerConfigured = true;
-};
+}
 
-const normalizeText = (text: string): string =>
-  text
-    .replace(/\u0000/g, "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
+function normalizeText(text: string): string {
+  return text
+    .replace(/\0/g, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
 
 const toDefaultFilename = (index: number): string => `resume-${index + 1}.pdf`;
 
-const uniqueStrings = (items: string[]): string[] => {
+function uniqueStrings(items: string[]): string[] {
   const seen = new Set<string>();
   const output: string[] = [];
 
@@ -125,42 +124,38 @@ const uniqueStrings = (items: string[]): string[] => {
   }
 
   return output;
-};
+}
 
-const firstRegexMatch = (
-  text: string,
-  pattern: RegExp,
-  group = 1
-): string | null => {
+function firstRegexMatch(text: string, pattern: RegExp, group = 1): string | null {
   const match = text.match(pattern);
   const value = match?.[group]?.trim();
   return value && value.length > 0 ? value : null;
-};
+}
 
-const decodeDataUrlToBytes = (dataUrl: string): Uint8Array => {
-  const match = dataUrl.match(/^data:([^,]*?),([\s\S]*)$/);
+function decodeDataUrlToBytes(dataUrl: string): Uint8Array {
+  const match = dataUrl.match(/^data:([^,]*),([\s\S]*)$/);
 
   if (!match) {
-    throw new Error("Invalid data URL format.");
+    throw new Error('Invalid data URL format.');
   }
 
-  const meta = match[1] ?? "";
-  const payload = match[2] ?? "";
-  const isBase64 = meta.includes(";base64");
+  const meta = match[1] ?? '';
+  const payload = match[2] ?? '';
+  const isBase64 = meta.includes(';base64');
 
   if (isBase64) {
-    return Uint8Array.from(Buffer.from(payload, "base64"));
+    return Uint8Array.from(Buffer.from(payload, 'base64'));
   }
 
-  return Uint8Array.from(Buffer.from(decodeURIComponent(payload), "utf8"));
-};
+  return Uint8Array.from(Buffer.from(decodeURIComponent(payload), 'utf8'));
+}
 
-const readPdfBytes = async (url: string): Promise<Uint8Array> => {
-  if (url.startsWith("data:")) {
+async function readPdfBytes(url: string): Promise<Uint8Array> {
+  if (url.startsWith('data:')) {
     return decodeDataUrlToBytes(url);
   }
 
-  if (url.startsWith("https://") || url.startsWith("http://")) {
+  if (url.startsWith('https://') || url.startsWith('http://')) {
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -171,10 +166,10 @@ const readPdfBytes = async (url: string): Promise<Uint8Array> => {
     return new Uint8Array(bytes);
   }
 
-  throw new Error("Unsupported PDF url format.");
-};
+  throw new Error('Unsupported PDF url format.');
+}
 
-const clip = (text: string, maxChars: number): { text: string; truncated: boolean } => {
+function clip(text: string, maxChars: number): { text: string, truncated: boolean } {
   if (text.length <= maxChars) {
     return { text, truncated: false };
   }
@@ -183,10 +178,10 @@ const clip = (text: string, maxChars: number): { text: string; truncated: boolea
     text: `${text.slice(0, maxChars)}\n\n[...content truncated...]`,
     truncated: true,
   };
-};
+}
 
-const extractSectionLines = (lines: string[], headingPattern: RegExp): string[] => {
-  const startIndex = lines.findIndex((line) => headingPattern.test(line));
+function extractSectionLines(lines: string[], headingPattern: RegExp): string[] {
+  const startIndex = lines.findIndex(line => headingPattern.test(line));
 
   if (startIndex < 0) {
     return [];
@@ -195,7 +190,7 @@ const extractSectionLines = (lines: string[], headingPattern: RegExp): string[] 
   const section: string[] = [];
 
   for (let i = startIndex + 1; i < lines.length; i += 1) {
-    const line = lines[i]?.trim() ?? "";
+    const line = lines[i]?.trim() ?? '';
 
     if (!line) {
       if (section.length > 0) {
@@ -205,11 +200,11 @@ const extractSectionLines = (lines: string[], headingPattern: RegExp): string[] 
     }
 
     if (
-      section.length > 1 &&
-      /(教育|技能|项目|实习|经历|工作|荣誉|证书|自我评价|objective|education|skills|projects|experience)/i.test(
-        line
-      ) &&
-      line.length <= 20
+      section.length > 1
+      && /(教育|技能|项目|实习|经历|工作|荣誉|证书|自我评价|objective|education|skills|projects|experience)/i.test(
+        line,
+      )
+      && line.length <= 20
     ) {
       break;
     }
@@ -222,21 +217,19 @@ const extractSectionLines = (lines: string[], headingPattern: RegExp): string[] 
   }
 
   return section;
-};
+}
 
-export const collectUploadedResumePdfs = (
-  messages: UIMessage[]
-): UploadedResumePdf[] => {
+export function collectUploadedResumePdfs(messages: UIMessage[]): UploadedResumePdf[] {
   const results: UploadedResumePdf[] = [];
   const seen = new Set<string>();
 
   for (const message of messages) {
-    if (message.role !== "user") {
+    if (message.role !== 'user') {
       continue;
     }
 
     message.parts.forEach((part, index) => {
-      if (part.type !== "file" || part.mediaType !== "application/pdf") {
+      if (part.type !== 'file' || part.mediaType !== 'application/pdf') {
         return;
       }
 
@@ -258,12 +251,9 @@ export const collectUploadedResumePdfs = (
   }
 
   return results;
-};
+}
 
-export const selectUploadedResumePdfs = (
-  files: UploadedResumePdf[],
-  resumeName?: string
-): UploadedResumePdf[] => {
+export function selectUploadedResumePdfs(files: UploadedResumePdf[], resumeName?: string): UploadedResumePdf[] {
   const selector = resumeName?.trim();
 
   if (!selector) {
@@ -277,12 +267,10 @@ export const selectUploadedResumePdfs = (
   }
 
   const lowerSelector = selector.toLowerCase();
-  return files.filter((file) => file.filename.toLowerCase().includes(lowerSelector));
-};
+  return files.filter(file => file.filename.toLowerCase().includes(lowerSelector));
+}
 
-export const parseResumePdf = async (
-  file: UploadedResumePdf
-): Promise<ParsedResumePdf> => {
+export async function parseResumePdf(file: UploadedResumePdf): Promise<ParsedResumePdf> {
   const { PDFParse } = await loadPdfParseModule();
   await ensurePdfWorker(PDFParse);
 
@@ -291,9 +279,9 @@ export const parseResumePdf = async (
 
   try {
     const textResult = await parser.getText();
-    const normalized = normalizeText(textResult.text ?? "");
-    const pageCount =
-      typeof textResult.total === "number" && textResult.total > 0
+    const normalized = normalizeText(textResult.text ?? '');
+    const pageCount
+      = typeof textResult.total === 'number' && textResult.total > 0
         ? textResult.total
         : textResult.pages.length;
 
@@ -304,77 +292,76 @@ export const parseResumePdf = async (
       text: normalized,
       totalTextChars: normalized.length,
     };
-  } finally {
+  }
+  finally {
     await parser.destroy().catch(() => undefined);
   }
-};
+}
 
-export const extractResumeStructuredInfo = (
-  resumeText: string
-): ResumeStructuredInfo => {
+export function extractResumeStructuredInfo(resumeText: string): ResumeStructuredInfo {
   const lines = resumeText
-    .split("\n")
-    .map((line) => line.trim())
+    .split('\n')
+    .map(line => line.trim())
     .filter(Boolean);
 
   const topLines = lines.slice(0, 8);
-  const candidateName =
-    topLines.find((line) => /^[\u4e00-\u9fa5]{2,4}$/.test(line)) ??
-    topLines.find((line) => /^[A-Za-z]+(?:\s+[A-Za-z]+){1,2}$/.test(line)) ??
-    null;
+  const candidateName
+    = topLines.find(line => /^[\u4E00-\u9FA5]{2,4}$/.test(line))
+      ?? topLines.find(line => /^[A-Z]+(?:\s+[A-Z]+){1,2}$/i.test(line))
+      ?? null;
 
   const email = firstRegexMatch(
     resumeText,
-    /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/
+    /([\w.%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
   );
-  const phone =
-    firstRegexMatch(resumeText, /((?:\+?86[-\s]?)?1[3-9]\d{9})/) ??
-    firstRegexMatch(resumeText, /(\+?\d[\d\s-]{7,}\d)/);
-  const school =
-    lines.find((line) => /(大学|学院|University|College|School)/i.test(line)) ??
-    null;
-  const education =
-    lines.find((line) => /(本科|硕士|博士|大专|Bachelor|Master|PhD|BSc|MSc)/i.test(line)) ??
-    null;
-  const degree =
-    firstRegexMatch(
+  const phone
+    = firstRegexMatch(resumeText, /((?:\+?86[-\s]?)?1[3-9]\d{9})/)
+      ?? firstRegexMatch(resumeText, /(\+?\d[\d\s-]{7,}\d)/);
+  const school
+    = lines.find(line => /(大学|学院|University|College|School)/i.test(line))
+      ?? null;
+  const education
+    = lines.find(line => /(本科|硕士|博士|大专|Bachelor|Master|PhD|BSc|MSc)/i.test(line))
+      ?? null;
+  const degree
+    = firstRegexMatch(
       resumeText,
       /(本科|硕士|博士|大专|Bachelor(?:'s)?|Master(?:'s)?|PhD|BSc|MSc)/i,
-      1
+      1,
     ) ?? null;
-  const major =
-    firstRegexMatch(resumeText, /(?:专业|Major)[:：]?\s*([^\n，,;；]{2,40})/i) ??
-    lines.find((line) => /(计算机|软件工程|信息管理|电子|数学|统计|金融|会计)/i.test(line)) ??
-    null;
-  const graduationYear =
-    firstRegexMatch(resumeText, /(20\d{2})\s*(?:年)?\s*(?:毕业|graduate)/i) ??
-    firstRegexMatch(resumeText, /(20\d{2})\s*(?:届|级)/i);
+  const major
+    = firstRegexMatch(resumeText, /(?:专业|Major)[:：]?\s*([^\n，,;；]{2,40})/i)
+      ?? lines.find(line => /(计算机|软件工程|信息管理|电子|数学|统计|金融|会计)/.test(line))
+      ?? null;
+  const graduationYear
+    = firstRegexMatch(resumeText, /(20\d{2})\s*年?\s*(?:毕业|graduate)/i)
+      ?? firstRegexMatch(resumeText, /(20\d{2})\s*(?:届|级)/);
 
   const skillSection = extractSectionLines(
     lines,
-    /(技能|技术栈|能力标签|skills?)/i
+    /(技能|技术栈|能力标签|skills?)/i,
   );
   const skills = uniqueStrings(
     skillSection
-      .join(" ")
+      .join(' ')
       .split(/[、,，;；/|·]/)
-      .map((skill) => skill.trim())
-      .filter((skill) => skill.length >= 2 && skill.length <= 30)
-      .slice(0, 18)
+      .map(skill => skill.trim())
+      .filter(skill => skill.length >= 2 && skill.length <= 30)
+      .slice(0, 18),
   );
 
   const projectSection = extractSectionLines(lines, /(项目|projects?)/i);
   const internshipSection = extractSectionLines(
     lines,
-    /(实习|工作经历|experience|intern)/i
+    /(实习|工作经历|experience|intern)/i,
   );
 
   const projectHighlights = uniqueStrings(projectSection).slice(0, 6);
   const internshipHighlights = uniqueStrings(internshipSection).slice(0, 6);
   const links = uniqueStrings(
     [...resumeText.matchAll(/(https?:\/\/[^\s)]+)/g)].map(
-      (match) => match[1] ?? ""
-    )
+      match => match[1] ?? '',
+    ),
   ).slice(0, 6);
 
   return {
@@ -391,7 +378,8 @@ export const extractResumeStructuredInfo = (
     school,
     skills,
   };
-};
+}
 
-export const clipResumeText = (text: string, maxChars = 12000) =>
-  clip(text, maxChars);
+export function clipResumeText(text: string, maxChars = 12000) {
+  return clip(text, maxChars);
+}

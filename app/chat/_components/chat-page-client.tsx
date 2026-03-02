@@ -110,7 +110,7 @@ const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
 const CHAT_REQUEST_TIMEOUT_MS = 8 * 60 * 1000;
 
 const QUICK_SUGGESTIONS = [
-  "给我一个实习生简历筛选的评分标准（100分制）。",
+  "给我一个简历筛选的评分标准（100分制）。",
   "请输出候选人的亮点、风险点和追问问题。",
   "这份简历是否建议进入面试？请给出理由。",
   "我上传了多份简历，请帮我对比并给出推荐顺序。",
@@ -804,7 +804,7 @@ export default function ChatPageClient({
           </Button>
         </div>
         <h1 className="pixel-title text-balance font-bold tracking-tight text-2xl sm:text-3xl">
-          实习生简历筛选助手
+          简历筛选助手
         </h1>
         <p className="mt-2 max-w-3xl font-serif!  text-xs text-muted-foreground sm:text-sm">
           支持多份简历上传、初筛评分、风险识别与面试推进建议
@@ -837,7 +837,7 @@ export default function ChatPageClient({
               <ConversationEmptyState
                 className="my-8"
                 description="上传候选人简历（最多 8 份）或输入筛选要求，助手会给出评分与推荐结论。"
-                title="开始筛选实习生简历"
+                title="开始筛选简历"
               />
             ) : (
               <>
