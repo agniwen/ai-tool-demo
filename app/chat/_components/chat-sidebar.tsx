@@ -2,6 +2,7 @@
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import {
+  ChevronsUpDownIcon,
   LogOutIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -12,11 +13,13 @@ import {
 import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -33,6 +36,22 @@ interface ConversationListItem {
 }
 
 const GENERATING_CHAT_TITLE = '生成中...';
+
+function getInitials(name?: string | null, email?: string | null) {
+  const source = (name ?? email ?? '').trim();
+
+  if (!source) {
+    return 'U';
+  }
+
+  const words = source.split(/\s+/).filter(Boolean);
+
+  if (words.length >= 2) {
+    return `${words[0]![0]}${words[1]![0]}`.toUpperCase();
+  }
+
+  return source.slice(0, 2).toUpperCase();
+}
 
 const sidebarTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
   month: '2-digit',
@@ -159,6 +178,9 @@ export default function ChatSidebar() {
   }, []);
 
   const showExpandedSidebar = !isSidebarCollapsed || isMobileSidebarOpen;
+  const userName = session?.user?.name ?? '用户';
+  const userEmail = session?.user?.email ?? '';
+  const userInitials = getInitials(session?.user?.name, session?.user?.email);
 
   return (
     <aside
@@ -191,7 +213,7 @@ export default function ChatSidebar() {
           ? (
               <>
                 <p className='truncate font-medium text-sm'>聊天记录</p>
-                <Button asChild className='ml-auto' size='sm' type='button' variant='outline'>
+                <Button asChild className='ml-auto hidden sm:flex' size='sm' type='button' variant='outline'>
                   <Link href='/chat'>
                     <PlusIcon className='mr-1 size-3.5' />
                     新建
@@ -274,46 +296,35 @@ export default function ChatSidebar() {
               <div className='flex items-center gap-2'>
                 {isPending
                   ? (
-                      <div className='h-8 w-full animate-pulse rounded-full bg-muted' />
+                      <div className='h-9 w-full animate-pulse rounded-full bg-muted' />
                     )
                   : session?.user
                     ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
-                              className='w-full justify-start gap-2 px-2'
-                              size='sm'
+                              className='w-full justify-start gap-2 p-1! rounded-full'
                               type='button'
                               variant='ghost'
                             >
-                              <div className='bg-primary/10 flex size-8 shrink-0 items-center justify-center rounded-full'>
-                                {session.user.image
-                                  ? (
-                                      <img
-                                        alt={session.user.name ?? '用户头像'}
-                                        className='size-full rounded-full object-cover'
-                                        src={session.user.image}
-                                      />
-                                    )
-                                  : (
-                                      <UserIcon className='size-4' />
-                                    )}
-                              </div>
+                              <Avatar size='default'>
+                                <AvatarImage alt={userName} src={session.user.image ?? undefined} />
+                                <AvatarFallback>{userInitials}</AvatarFallback>
+                              </Avatar>
                               <div className='min-w-0 flex-1 text-left'>
-                                <p className='truncate font-medium text-sm'>
-                                  {session.user.name ?? '用户'}
-                                </p>
-                                <p className='truncate text-muted-foreground text-xs'>
-                                  {session.user.email ?? ''}
-                                </p>
+                                <p className='truncate font-medium text-sm'>{userName}</p>
+                                <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
                               </div>
+                              <ChevronsUpDownIcon className='size-4 text-muted-foreground' />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align='end' className='w-48'>
-                            <DropdownMenuItem
-                              className='text-destructive focus:text-destructive'
-                              onClick={handleSignOut}
-                            >
+                          <DropdownMenuContent align='end' className='w-56'>
+                            <DropdownMenuLabel className='space-y-0.5'>
+                              <p className='truncate font-medium text-sm'>{userName}</p>
+                              <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={handleSignOut} variant='destructive'>
                               <LogOutIcon className='mr-2 size-4' />
                               退出登录
                             </DropdownMenuItem>
@@ -322,9 +333,8 @@ export default function ChatSidebar() {
                       )
                     : (
                         <Button
-                          className='w-full gap-2'
+                          className='w-full gap-2 rounded-full!'
                           onClick={handleSignIn}
-                          size='sm'
                           type='button'
                           variant='secondary'
                         >
@@ -356,26 +366,48 @@ export default function ChatSidebar() {
               </div>
             )
           : (
-              <Button
-                aria-label={session?.user ? '用户菜单' : '登录'}
-                className='w-full'
-                onClick={session?.user ? handleSignOut : handleSignIn}
-                size='icon'
-                type='button'
-                variant='ghost'
-              >
-                {session?.user?.image
-                  ? (
-                      <img
-                        alt={session.user.name ?? '用户头像'}
-                        className='size-6 rounded-full'
-                        src={session.user.image}
-                      />
-                    )
-                  : (
+              session?.user
+                ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          aria-label='用户菜单'
+                          className='w-full'
+                          size='icon'
+                          type='button'
+                          variant='ghost'
+                        >
+                          <Avatar size='sm'>
+                            <AvatarImage alt={userName} src={session.user.image ?? undefined} />
+                            <AvatarFallback>{userInitials}</AvatarFallback>
+                          </Avatar>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align='end' className='w-56'>
+                        <DropdownMenuLabel className='space-y-0.5'>
+                          <p className='truncate font-medium text-sm'>{userName}</p>
+                          <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
+                        </DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleSignOut} variant='destructive'>
+                          <LogOutIcon className='mr-2 size-4' />
+                          退出登录
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )
+                : (
+                    <Button
+                      aria-label='登录'
+                      className='w-full'
+                      onClick={handleSignIn}
+                      size='icon'
+                      type='button'
+                      variant='ghost'
+                    >
                       <UserIcon className='size-4' />
-                    )}
-              </Button>
+                    </Button>
+                  )
             )}
       </div>
     </aside>
