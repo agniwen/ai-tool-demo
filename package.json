@@ -16,6 +16,7 @@
   "dependencies": {
     "@ai-sdk/google": "^3.0.33",
     "@ai-sdk/react": "^3.0.106",
+    "@elevenlabs/elevenlabs-js": "^2.37.0",
     "@napi-rs/canvas": "^0.1.95",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@streamdown/cjk": "^1.0.2",
@@ -37,6 +38,7 @@
     "nanoid": "^5.1.6",
     "next": "16.1.6",
     "ogl": "^1.0.11",
+    "openai": "^6.25.0",
     "pdf-parse": "^2.4.5",
     "postgres": "^3.4.5",
     "radix-ui": "^1.4.3",
