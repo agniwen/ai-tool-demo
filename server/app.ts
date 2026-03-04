@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth';
 import { betterAuthMiddleware } from './middlewares/better-auth';
 import { chatTitleRouter } from './routes/chat-title/route';
 import { chatRouter } from './routes/chat/route';
+import { interviewRouter } from './routes/interview/route';
 
 export const app = new Hono<Env>()
   .use(
@@ -18,13 +19,14 @@ export const app = new Hono<Env>()
       credentials: true,
     }),
   )
-  .on(['POST', 'GET'], '/api/auth/*', c => {
+  .on(['POST', 'GET'], '/api/auth/*', (c) => {
     return auth.handler(c.req.raw);
   })
   .use(betterAuthMiddleware)
   .basePath('/api')
   .route('/chat', chatRouter)
-  .route('/chat-title', chatTitleRouter);
+  .route('/chat-title', chatTitleRouter)
+  .route('/interview', interviewRouter);
 
 app.notFound(c => c.json({ error: 'Not Found' }, 404));
 

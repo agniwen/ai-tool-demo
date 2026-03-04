@@ -7,7 +7,6 @@ import {
   SparklesIcon,
 } from 'lucide-react';
 import Link from 'next/link';
-import ColorBends from '@/components/react-bits/color-bends';
 import { FadeContent } from '@/components/react-bits/fade-content';
 import Prism from '@/components/react-bits/prism';
 import { SplitText } from '@/components/react-bits/split-text';
@@ -93,6 +92,12 @@ export default function HomePage() {
                 aria-hidden='true'
                 className='size-4 transition-transform duration-300 ease-out group-hover:translate-x-0.5'
               />
+            </Link>
+            <Link
+              className='inline-flex items-center gap-2 rounded-xl bg-card/70 px-5 py-3 ring-1 ring-border/70 font-medium text-foreground text-sm transition-colors transition-transform duration-300 ease-out hover:-translate-y-0.5 hover:bg-card focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/60'
+              href='/interview'
+            >
+              体验 AI 语音面试
             </Link>
             <a
               className='inline-flex items-center gap-2 rounded-xl px-5 py-3 ring-transparent font-medium text-foreground text-sm transition-colors transition-transform duration-300 ease-out hover:-translate-y-0.5 hover:bg-accent/50 bg-accent/40 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/60'
