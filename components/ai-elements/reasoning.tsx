@@ -214,7 +214,6 @@ export type ReasoningContentProps = ComponentProps<
 };
 
 const streamdownPlugins = { cjk, code, math, mermaid };
-
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => (
     <CollapsibleContent
@@ -225,7 +224,8 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      <Streamdown plugins={streamdownPlugins} {...props}>
+      {/* @ts-expect-error ignore */}
+      <Streamdown plugins={streamdownPlugins} {...props} dir='auto'>
         {children}
       </Streamdown>
     </CollapsibleContent>

@@ -46,10 +46,6 @@ export const metadata: Metadata = {
     '面向招聘场景的聊天式简历初筛应用，支持上传简历并生成筛选建议。',
 };
 
-export const viewport: Viewport = {
-  themeColor: '#f2f8ff',
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{
