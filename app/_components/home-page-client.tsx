@@ -4,28 +4,18 @@ import {
   ArrowRightIcon,
   BriefcaseBusinessIcon,
   FileSearch2Icon,
-  LogOutIcon,
   MessageCircleMoreIcon,
   ShieldCheckIcon,
   SparklesIcon,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { SignInRequiredDialog } from '@/components/auth/sign-in-required-dialog';
 import { FadeContent } from '@/components/react-bits/fade-content';
 import Prism from '@/components/react-bits/prism';
 import { SplitText } from '@/components/react-bits/split-text';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+
 import { authClient } from '@/lib/auth-client';
 
 const highlights = [
@@ -50,22 +40,6 @@ const highlights = [
     icon: MessageCircleMoreIcon,
   },
 ];
-
-function getInitials(name?: string | null, email?: string | null) {
-  const source = (name ?? email ?? '').trim();
-
-  if (!source) {
-    return 'U';
-  }
-
-  const words = source.split(/\s+/).filter(Boolean);
-
-  if (words.length >= 2) {
-    return `${words[0]![0]}${words[1]![0]}`.toUpperCase();
-  }
-
-  return source.slice(0, 2).toUpperCase();
-}
 
 export default function HomePageClient() {
   const router = useRouter();

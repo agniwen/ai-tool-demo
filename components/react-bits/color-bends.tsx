@@ -149,7 +149,7 @@ export default function ColorBends({
     const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
     const geometry = new THREE.PlaneGeometry(2, 2);
-    const uColorsArray = Array.from({ length: MAX_COLORS }, () => new THREE.Vector3(0, 0, 0));
+    const uColorsArray = Array.from({ length: MAX_COLORS }).fill(new THREE.Vector3(0, 0, 0));
     const material = new THREE.ShaderMaterial({
       vertexShader: vert,
       fragmentShader: frag,

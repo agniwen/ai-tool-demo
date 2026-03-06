@@ -359,9 +359,7 @@ export function extractResumeStructuredInfo(resumeText: string): ResumeStructure
   const projectHighlights = uniqueStrings(projectSection).slice(0, 6);
   const internshipHighlights = uniqueStrings(internshipSection).slice(0, 6);
   const links = uniqueStrings(
-    [...resumeText.matchAll(/(https?:\/\/[^\s)]+)/g)].map(
-      match => match[1] ?? '',
-    ),
+    Array.from(resumeText.matchAll(/(https?:\/\/[^\s)]+)/g), match => match[1] ?? ''),
   ).slice(0, 6);
 
   return {

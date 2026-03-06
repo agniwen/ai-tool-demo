@@ -31,7 +31,7 @@ export function SplitText({ text, className }: SplitTextProps) {
         },
       }}
     >
-      {Array.from(text).map((char, index) => (
+      {Array.from(text, (char, index) => (
         <motion.span
           aria-hidden='true'
           className='inline-block'

@@ -130,6 +130,7 @@ const QUICK_SUGGESTIONS = [
 const NEW_CHAT_TITLE = '新对话';
 const GENERATING_CHAT_TITLE = '生成中...';
 const MAX_CHAT_TITLE_LENGTH = 28;
+const WHITESPACE_REGEX = /\s+/;
 
 function getInitials(name?: string | null, email?: string | null) {
   const source = (name ?? email ?? '').trim();
@@ -138,7 +139,7 @@ function getInitials(name?: string | null, email?: string | null) {
     return 'U';
   }
 
-  const words = source.split(/\s+/).filter(Boolean);
+  const words = source.split(WHITESPACE_REGEX).filter(Boolean);
 
   if (words.length >= 2) {
     return `${words[0]![0]}${words[1]![0]}`.toUpperCase();
@@ -817,7 +818,7 @@ export default function ChatPageClient({
     try {
       await navigator.clipboard.writeText(content);
       setCopiedMessageId(messageId);
-      setTimeout(() => setCopiedMessageId(null), 1200);
+      setTimeout(setCopiedMessageId, 1200, null);
     }
     catch {
       setCopiedMessageId(null);

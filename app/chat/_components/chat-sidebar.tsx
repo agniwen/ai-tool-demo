@@ -37,6 +37,7 @@ interface ConversationListItem {
 }
 
 const GENERATING_CHAT_TITLE = '生成中...';
+const WHITESPACE_REGEX = /\s+/;
 
 function getInitials(name?: string | null, email?: string | null) {
   const source = (name ?? email ?? '').trim();
@@ -45,7 +46,7 @@ function getInitials(name?: string | null, email?: string | null) {
     return 'U';
   }
 
-  const words = source.split(/\s+/).filter(Boolean);
+  const words = source.split(WHITESPACE_REGEX).filter(Boolean);
 
   if (words.length >= 2) {
     return `${words[0]![0]}${words[1]![0]}`.toUpperCase();
@@ -167,9 +168,11 @@ export default function ChatSidebar() {
     [activeSessionId, refreshConversationList, router],
   );
 
-  const handleSignOut = useCallback(() => {
-    authClient.signOut();
-  }, []);
+  const handleSignOut = useCallback(async () => {
+    await authClient.signOut();
+    closeMobileSidebar(false);
+    router.replace('/');
+  }, [closeMobileSidebar, router]);
 
   const showExpandedSidebar = !isSidebarCollapsed || isMobileSidebarOpen;
   const userName = session?.user?.name ?? '用户';
