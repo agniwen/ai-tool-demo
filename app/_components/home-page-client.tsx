@@ -21,23 +21,23 @@ import { isDeveloperModeEnabled } from '@/lib/developer-mode';
 
 const highlights = [
   {
-    title: '多简历并行分析',
-    description: '支持一次上传 8 份 PDF，自动提取要点并生成对比结论。',
+    title: '聊天式简历初筛',
+    description: '支持一次上传多份 PDF 简历，围绕岗位要求持续追问并输出筛选建议。',
     icon: FileSearch2Icon,
   },
   {
     title: '岗位语境驱动',
-    description: '输入 JD 后，评分会围绕岗位能力模型展开，不再只看关键词。',
+    description: '输入 JD 或筛选要求后，评估会围绕真实招聘语境展开，而不只是匹配关键词。',
     icon: BriefcaseBusinessIcon,
   },
   {
-    title: '可解释的建议',
-    description: '输出亮点、风险点与追问建议，给出可落地的面试推进方向。',
+    title: '语音模拟面试',
+    description: '发起实时语音面试，查看追问过程、候选人作答节奏与现场记录。',
     icon: ShieldCheckIcon,
   },
   {
-    title: '聊天式交互',
-    description: '围绕候选人和岗位持续追问，像和面试官共创评估结论一样自然。',
+    title: '筛选到面试联动',
+    description: '从简历初筛到模拟面试使用同一套交互体验，让判断过程更连续。',
     icon: MessageCircleMoreIcon,
   },
 ];
@@ -95,17 +95,17 @@ export default function HomePageClient() {
           <FadeContent>
             <p className='inline-flex items-center gap-2 rounded-full bg-primary/8 px-3 py-1 font-medium text-primary text-xs'>
               <SparklesIcon aria-hidden='true' className='size-3' />
-              招聘效率工具
+              招聘协作工作台
             </p>
           </FadeContent>
 
           <h1 className='pixel-title mt-5 mx-auto max-w-4xl text-balance font-bold text-3xl text-foreground leading-tight sm:text-5xl'>
-            <SplitText text='用更快、更稳、更清晰的方式，完成简历初筛' />
+            <SplitText text='从简历筛选到模拟面试，用同一套工作流完成候选人评估' />
           </h1>
 
           <FadeContent className='mt-4 mx-auto max-w-3xl' delay={0.1}>
             <p className='font-serif text-base text-muted-foreground leading-relaxed sm:text-lg'>
-              这个网站为招聘团队提供聊天式简历分析体验，帮助你在短时间内识别候选人亮点、风险与面试价值，让每一次沟通都更有依据。
+              现在你可以先用聊天式方式完成简历初筛，再进入实时语音模拟面试，连续查看候选人的亮点、风险、追问过程与回答表现，让招聘判断更完整。
             </p>
           </FadeContent>
 
@@ -116,7 +116,7 @@ export default function HomePageClient() {
               onClick={() => handleProtectedNavigation('/chat')}
               type='button'
             >
-              立即开始筛选
+              进入简历筛选
               <ArrowRightIcon
                 aria-hidden='true'
                 className='size-4 transition-transform duration-300 ease-out group-hover:translate-x-0.5'
@@ -129,7 +129,7 @@ export default function HomePageClient() {
               type='button'
               variant='outline'
             >
-              体验 AI 语音面试
+              进入模拟面试
             </Button>
           </FadeContent>
 
@@ -163,7 +163,7 @@ export default function HomePageClient() {
         callbackURL={callbackURL}
         onOpenChange={open => !open && setPendingPath(null)}
         open={pendingPath !== null}
-        title={pendingPath === '/interview' ? '登录后即可体验 AI 语音面试' : '登录后即可使用简历筛选助手'}
+        title={pendingPath === '/interview' ? '登录后即可进入模拟面试' : '登录后即可进入简历筛选'}
       />
     </>
   );
