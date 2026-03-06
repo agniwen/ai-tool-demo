@@ -2,6 +2,7 @@ import type { Env } from '@/server/type';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { auth } from '@/lib/auth';
+import { authMiddleware } from './middlewares/auth';
 import { betterAuthMiddleware } from './middlewares/better-auth';
 import { chatTitleRouter } from './routes/chat-title/route';
 import { chatRouter } from './routes/chat/route';
@@ -23,6 +24,10 @@ export const app = new Hono<Env>()
     return auth.handler(c.req.raw);
   })
   .use(betterAuthMiddleware)
+  .use('/api/chat', authMiddleware)
+  .use('/api/chat-title', authMiddleware)
+  .use('/api/interview/token', authMiddleware)
+  .use('/api/interview/report/*', authMiddleware)
   .basePath('/api')
   .route('/chat', chatRouter)
   .route('/chat-title', chatTitleRouter)

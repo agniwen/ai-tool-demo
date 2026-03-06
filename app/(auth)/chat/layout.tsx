@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import ChatLayoutShell from './_components/chat-layout-shell';
+import ChatLayoutShell from '@/app/chat/_components/chat-layout-shell';
 
 export default function ChatLayout({
   children,

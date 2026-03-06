@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Analytics } from '@vercel/analytics/next';
 import {
   IBM_Plex_Mono,
@@ -44,6 +44,9 @@ export const metadata: Metadata = {
   title: '简历筛选助手',
   description:
     '面向招聘场景的聊天式简历初筛应用，支持上传简历并生成筛选建议。',
+};
+
+export const viewport: Viewport = {
   themeColor: '#f2f8ff',
 };
 
