@@ -3,6 +3,7 @@
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import {
   ChevronsUpDownIcon,
+  HouseIcon,
   LogOutIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
@@ -210,7 +211,12 @@ export default function ChatSidebar() {
           ? (
               <>
                 <p className='truncate font-medium text-sm'>聊天记录</p>
-                <Button asChild className='ml-auto hidden sm:flex' size='sm' type='button' variant='outline'>
+                <Button asChild className='ml-auto' size='icon' type='button' variant='ghost'>
+                  <Link aria-label='返回首页' href='/'>
+                    <HouseIcon className='size-4' />
+                  </Link>
+                </Button>
+                <Button asChild className='hidden sm:flex' size='sm' type='button' variant='outline'>
                   <Link href='/chat'>
                     <PlusIcon className='mr-1 size-3.5' />
                     新建

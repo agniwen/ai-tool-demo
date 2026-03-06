@@ -17,6 +17,7 @@ import { SplitText } from '@/components/react-bits/split-text';
 import { Button } from '@/components/ui/button';
 
 import { authClient } from '@/lib/auth-client';
+import { isDeveloperModeEnabled } from '@/lib/developer-mode';
 
 const highlights = [
   {
@@ -45,6 +46,7 @@ export default function HomePageClient() {
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
   const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const isDeveloperMode = isDeveloperModeEnabled();
 
   const callbackURL = useMemo(() => pendingPath ?? '/chat', [pendingPath]);
 
@@ -53,7 +55,7 @@ export default function HomePageClient() {
       return;
     }
 
-    if (session?.user) {
+    if (isDeveloperMode || session?.user) {
       router.push(href);
       return;
     }

@@ -5,6 +5,7 @@ import { Conversation as VoiceConversation } from '@elevenlabs/client';
 import {
   AudioLinesIcon,
   ChevronsUpDownIcon,
+  HouseIcon,
   LogOutIcon,
   MicIcon,
   PanelLeftCloseIcon,
@@ -13,6 +14,7 @@ import {
   SparklesIcon,
   UserIcon,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Conversation,
@@ -457,8 +459,13 @@ export default function InterviewPageClient() {
               ? (
                   <>
                     <p className='truncate font-medium text-sm'>设置与状态</p>
+                    <Button asChild className='ml-auto' size='icon' type='button' variant='ghost'>
+                      <Link aria-label='返回首页' href='/'>
+                        <HouseIcon className='size-4' />
+                      </Link>
+                    </Button>
                     <Button
-                      className='ml-auto hidden sm:flex'
+                      className='hidden sm:flex'
                       onClick={() => void loadAudioDevices(true)}
                       size='sm'
                       type='button'
