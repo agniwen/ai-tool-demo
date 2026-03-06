@@ -917,8 +917,9 @@ export default function ChatPageClient({
             {messages.length === 0
               ? (
                   <ConversationEmptyState
-                    className='my-8'
+                    className='my-10 rounded-2xl border border-dashed border-border/70 bg-background/70'
                     description='上传候选人简历（最多 8 份）或输入筛选要求，助手会给出评分与推荐结论。'
+                    icon={<SparklesIcon className='size-5' />}
                     title='开始筛选简历'
                   />
                 )
