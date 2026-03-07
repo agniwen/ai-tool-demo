@@ -35,6 +35,30 @@ let pdfParseModulePromise: Promise<typeof import('pdf-parse')> | null = null;
 let pdfParseWorkerModulePromise: Promise<typeof import('pdf-parse/worker')> | null
   = null;
 
+const NULL_BYTE_REGEX = /\0/g;
+const WINDOWS_LINE_BREAK_REGEX = /\r\n/g;
+const CARRIAGE_RETURN_REGEX = /\r/g;
+const EXCESSIVE_NEWLINES_REGEX = /\n{3,}/g;
+const DATA_URL_REGEX = /^data:([^,]*),([\s\S]*)$/;
+const SECTION_BREAK_HEADING_REGEX = /教育|技能|项目|实习|经历|工作|荣誉|证书|自我评价|objective|education|skills|projects|experience/i;
+const CJK_NAME_REGEX = /^[\u4E00-\u9FA5]{2,4}$/;
+const LATIN_NAME_REGEX = /^[A-Z]+(?:\s+[A-Z]+){1,2}$/i;
+const EMAIL_REGEX = /([\w.%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i;
+const MOBILE_PHONE_REGEX = /((?:\+?86[-\s]?)?1[3-9]\d{9})/;
+const GENERIC_PHONE_REGEX = /(\+?\d[\d\s-]{7,}\d)/;
+const SCHOOL_LINE_REGEX = /大学|学院|University|College|School/i;
+const EDUCATION_LINE_REGEX = /本科|硕士|博士|大专|Bachelor|Master|PhD|BSc|MSc/i;
+const DEGREE_REGEX = /(本科|硕士|博士|大专|Bachelor(?:'s)?|Master(?:'s)?|PhD|BSc|MSc)/i;
+const MAJOR_CAPTURE_REGEX = /(?:专业|Major)[:：]?\s*([^\n，,;；]{2,40})/i;
+const MAJOR_LINE_REGEX = /计算机|软件工程|信息管理|电子|数学|统计|金融|会计/;
+const GRADUATION_YEAR_REGEX = /(20\d{2})\s*年?\s*(?:毕业|graduate)/i;
+const GRADUATION_COHORT_REGEX = /(20\d{2})\s*(?:届|级)/;
+const SKILL_SECTION_HEADING_REGEX = /技能|技术栈|能力标签|skills?/i;
+const SKILL_SPLIT_REGEX = /[、,，;；/|·]/;
+const PROJECT_SECTION_HEADING_REGEX = /项目|projects?/i;
+const INTERNSHIP_SECTION_HEADING_REGEX = /实习|工作经历|experience|intern/i;
+const URL_REGEX = /(https?:\/\/[^\s)]+)/g;
+
 async function ensureDomPolyfills() {
   const globalWithPdfPolyfills = globalThis as Record<string, unknown>;
 
@@ -99,10 +123,10 @@ async function ensurePdfWorker(PDFParse: (typeof import('pdf-parse'))['PDFParse'
 
 function normalizeText(text: string): string {
   return text
-    .replace(/\0/g, '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(NULL_BYTE_REGEX, '')
+    .replace(WINDOWS_LINE_BREAK_REGEX, '\n')
+    .replace(CARRIAGE_RETURN_REGEX, '\n')
+    .replace(EXCESSIVE_NEWLINES_REGEX, '\n\n')
     .trim();
 }
 
@@ -133,7 +157,7 @@ function firstRegexMatch(text: string, pattern: RegExp, group = 1): string | nul
 }
 
 function decodeDataUrlToBytes(dataUrl: string): Uint8Array {
-  const match = dataUrl.match(/^data:([^,]*),([\s\S]*)$/);
+  const match = dataUrl.match(DATA_URL_REGEX);
 
   if (!match) {
     throw new Error('Invalid data URL format.');
@@ -201,9 +225,7 @@ function extractSectionLines(lines: string[], headingPattern: RegExp): string[] 
 
     if (
       section.length > 1
-      && /(教育|技能|项目|实习|经历|工作|荣誉|证书|自我评价|objective|education|skills|projects|experience)/i.test(
-        line,
-      )
+      && SECTION_BREAK_HEADING_REGEX.test(line)
       && line.length <= 20
     ) {
       break;
@@ -306,60 +328,60 @@ export function extractResumeStructuredInfo(resumeText: string): ResumeStructure
 
   const topLines = lines.slice(0, 8);
   const candidateName
-    = topLines.find(line => /^[\u4E00-\u9FA5]{2,4}$/.test(line))
-      ?? topLines.find(line => /^[A-Z]+(?:\s+[A-Z]+){1,2}$/i.test(line))
+    = topLines.find(line => CJK_NAME_REGEX.test(line))
+      ?? topLines.find(line => LATIN_NAME_REGEX.test(line))
       ?? null;
 
   const email = firstRegexMatch(
     resumeText,
-    /([\w.%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
+    EMAIL_REGEX,
   );
   const phone
-    = firstRegexMatch(resumeText, /((?:\+?86[-\s]?)?1[3-9]\d{9})/)
-      ?? firstRegexMatch(resumeText, /(\+?\d[\d\s-]{7,}\d)/);
+    = firstRegexMatch(resumeText, MOBILE_PHONE_REGEX)
+      ?? firstRegexMatch(resumeText, GENERIC_PHONE_REGEX);
   const school
-    = lines.find(line => /(大学|学院|University|College|School)/i.test(line))
+    = lines.find(line => SCHOOL_LINE_REGEX.test(line))
       ?? null;
   const education
-    = lines.find(line => /(本科|硕士|博士|大专|Bachelor|Master|PhD|BSc|MSc)/i.test(line))
+    = lines.find(line => EDUCATION_LINE_REGEX.test(line))
       ?? null;
   const degree
     = firstRegexMatch(
       resumeText,
-      /(本科|硕士|博士|大专|Bachelor(?:'s)?|Master(?:'s)?|PhD|BSc|MSc)/i,
+      DEGREE_REGEX,
       1,
     ) ?? null;
   const major
-    = firstRegexMatch(resumeText, /(?:专业|Major)[:：]?\s*([^\n，,;；]{2,40})/i)
-      ?? lines.find(line => /(计算机|软件工程|信息管理|电子|数学|统计|金融|会计)/.test(line))
+    = firstRegexMatch(resumeText, MAJOR_CAPTURE_REGEX)
+      ?? lines.find(line => MAJOR_LINE_REGEX.test(line))
       ?? null;
   const graduationYear
-    = firstRegexMatch(resumeText, /(20\d{2})\s*年?\s*(?:毕业|graduate)/i)
-      ?? firstRegexMatch(resumeText, /(20\d{2})\s*(?:届|级)/);
+    = firstRegexMatch(resumeText, GRADUATION_YEAR_REGEX)
+      ?? firstRegexMatch(resumeText, GRADUATION_COHORT_REGEX);
 
   const skillSection = extractSectionLines(
     lines,
-    /(技能|技术栈|能力标签|skills?)/i,
+    SKILL_SECTION_HEADING_REGEX,
   );
   const skills = uniqueStrings(
     skillSection
       .join(' ')
-      .split(/[、,，;；/|·]/)
+      .split(SKILL_SPLIT_REGEX)
       .map(skill => skill.trim())
       .filter(skill => skill.length >= 2 && skill.length <= 30)
       .slice(0, 18),
   );
 
-  const projectSection = extractSectionLines(lines, /(项目|projects?)/i);
+  const projectSection = extractSectionLines(lines, PROJECT_SECTION_HEADING_REGEX);
   const internshipSection = extractSectionLines(
     lines,
-    /(实习|工作经历|experience|intern)/i,
+    INTERNSHIP_SECTION_HEADING_REGEX,
   );
 
   const projectHighlights = uniqueStrings(projectSection).slice(0, 6);
   const internshipHighlights = uniqueStrings(internshipSection).slice(0, 6);
   const links = uniqueStrings(
-    Array.from(resumeText.matchAll(/(https?:\/\/[^\s)]+)/g), match => match[1] ?? ''),
+    Array.from(resumeText.matchAll(URL_REGEX), match => match[1] ?? ''),
   ).slice(0, 6);
 
   return {

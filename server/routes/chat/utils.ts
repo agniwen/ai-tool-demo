@@ -3,6 +3,10 @@ interface JobDescriptionContext {
   role: string
 }
 
+const ROLE_INTERN_REGEX = /\binternship\b|\bintern\b/gi;
+const ROLE_FULL_TIME_REGEX = /\bfull[- ]?time\b/gi;
+const ROLE_WHITESPACE_REGEX = /\s+/g;
+
 const internshipExtraRequirements = [
   '具备扎实的基础能力和快速学习能力，能在指导下高质量完成任务',
   '每周可到岗 4 天及以上，连续实习 3 个月及以上优先',
@@ -311,9 +315,9 @@ const JOB_DESCRIPTION_PRESETS: Array<{ keywords: RegExp, jd: (context: JobDescri
 
 function normalizeRoleLabel(role: string): string {
   return role
-    .replace(/\b(intern|internship)\b/gi, '实习生')
-    .replace(/\b(full[- ]?time)\b/gi, '正式')
-    .replace(/\s+/g, ' ')
+    .replace(ROLE_INTERN_REGEX, '实习生')
+    .replace(ROLE_FULL_TIME_REGEX, '正式')
+    .replace(ROLE_WHITESPACE_REGEX, ' ')
     .trim();
 }
 

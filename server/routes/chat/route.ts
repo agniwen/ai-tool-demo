@@ -19,6 +19,25 @@ import {
 } from './tools';
 import { buildAutoJobDescription } from './utils';
 
+const NORMALIZE_WHITESPACE_REGEX = /\s+/g;
+const ROLE_KEYWORD_MAP: Array<{ keyword: RegExp, role: string }> = [
+  { keyword: /行政/, role: '行政实习生' },
+  { keyword: /人事|HR/, role: '人力资源实习生' },
+  { keyword: /运营/, role: '运营实习生' },
+  { keyword: /产品/, role: '产品实习生' },
+  { keyword: /前端/, role: '前端开发实习生' },
+  { keyword: /后端|服务端|后台/, role: '后端开发实习生' },
+  { keyword: /测试|QA/, role: '测试实习生' },
+  { keyword: /数据分析|数据/, role: '数据分析实习生' },
+  { keyword: /设计|UI|UX/, role: '设计实习生' },
+  { keyword: /财务/, role: '财务实习生' },
+];
+const ROLE_INFER_PATTERNS = [
+  /(?:我需要招聘|我们需要招聘|需要招聘|招聘)\s*([^，。；\n]{1,24})/,
+  /(?:我需要|我们需要|需要)\s*([^，。；\n]{1,24})(?:岗位|职位|方向|人员)?/,
+];
+const ROLE_STRIP_TERMS_REGEX = /(一名|一位|一个|若干|实习生|岗位|职位|方向|人员|的)/g;
+
 function extractUserText(messages: UIMessage[]): string {
   return messages
     .filter(message => message.role === 'user')
@@ -30,37 +49,19 @@ function extractUserText(messages: UIMessage[]): string {
 }
 
 function inferRoleFromText(text: string): string | null {
-  const normalized = text.replace(/\s+/g, ' ').trim();
+  const normalized = text.replace(NORMALIZE_WHITESPACE_REGEX, ' ').trim();
 
   if (!normalized) {
     return null;
   }
 
-  const roleKeywordMap: Array<{ keyword: RegExp, role: string }> = [
-    { keyword: /行政/, role: '行政实习生' },
-    { keyword: /人事|HR/, role: '人力资源实习生' },
-    { keyword: /运营/, role: '运营实习生' },
-    { keyword: /产品/, role: '产品实习生' },
-    { keyword: /前端/, role: '前端开发实习生' },
-    { keyword: /后端|服务端|后台/, role: '后端开发实习生' },
-    { keyword: /测试|QA/, role: '测试实习生' },
-    { keyword: /数据分析|数据/, role: '数据分析实习生' },
-    { keyword: /设计|UI|UX/, role: '设计实习生' },
-    { keyword: /财务/, role: '财务实习生' },
-  ];
-
-  for (const item of roleKeywordMap) {
+  for (const item of ROLE_KEYWORD_MAP) {
     if (item.keyword.test(normalized)) {
       return item.role;
     }
   }
 
-  const patterns = [
-    /(?:我需要招聘|我们需要招聘|需要招聘|招聘)\s*([^，。；\n]{1,24})/,
-    /(?:我需要|我们需要|需要)\s*([^，。；\n]{1,24})(?:岗位|职位|方向|人员)?/,
-  ];
-
-  for (const pattern of patterns) {
+  for (const pattern of ROLE_INFER_PATTERNS) {
     const match = normalized.match(pattern);
 
     if (!match?.[1]) {
@@ -68,7 +69,7 @@ function inferRoleFromText(text: string): string | null {
     }
 
     const role = match[1]
-      .replace(/(一名|一位|一个|若干|实习生|岗位|职位|方向|人员|的)/g, '')
+      .replace(ROLE_STRIP_TERMS_REGEX, '')
       .trim();
 
     if (role.length > 0) {
