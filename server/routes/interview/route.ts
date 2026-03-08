@@ -114,20 +114,14 @@ export const interviewRouter = factory.createApp()
       apiKey,
       ...(baseURL ? { baseURL } : {}),
     });
-    const modelId = process.env.GOOGLE_MODEL ?? 'gemini-3-flash-preview';
     const pdfBytes = Buffer.from(await resume.arrayBuffer());
 
     let resumeProfile: ResumeProfile;
 
     try {
       const { output } = await generateText({
-        model: provider(modelId),
+        model: provider('gemini-3-pro-preview'),
         temperature: 0,
-        providerOptions: {
-          google: {
-            structuredOutputs: false,
-          },
-        },
         output: Output.object({
           schema: resumeProfileSchema,
           name: 'resume_profile',
@@ -178,13 +172,8 @@ export const interviewRouter = factory.createApp()
 
     try {
       const { output } = await generateText({
-        model: provider(modelId),
+        model: provider('gemini-3-pro-preview'),
         temperature: 0.3,
-        providerOptions: {
-          google: {
-            structuredOutputs: false,
-          },
-        },
         output: Output.object({
           schema: generatedInterviewQuestionsSchema,
           name: 'interview_questions',
