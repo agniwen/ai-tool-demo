@@ -7,6 +7,7 @@ import {
   Source_Serif_4,
 } from 'next/font/google';
 import localFont from 'next/font/local';
+import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import './globals.css';
 
@@ -62,7 +63,10 @@ export default function RootLayout({
         >
           跳到主要内容
         </a>
-        <TooltipProvider>{children}</TooltipProvider>
+        <TooltipProvider>
+          {children}
+          <Toaster position='top-right' richColors />
+        </TooltipProvider>
         <Analytics />
       </body>
     </html>

@@ -1,21 +1,25 @@
 'use client';
 
 import type { Conversation as ElevenConversationType } from '@elevenlabs/client';
+import type { ChangeEvent } from 'react';
 import { Conversation as VoiceConversation } from '@elevenlabs/client';
 import {
   AudioLinesIcon,
   ChevronsUpDownIcon,
   HouseIcon,
+  LoaderCircleIcon,
   LogOutIcon,
   MicIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   PhoneOffIcon,
   SparklesIcon,
+  UploadIcon,
   UserIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import {
   Conversation,
   ConversationContent,
@@ -43,6 +47,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { authClient } from '@/lib/auth-client';
+import { isDeveloperModeEnabled } from '@/lib/developer-mode';
 import { cn } from '@/lib/utils';
 
 interface Turn {
@@ -56,6 +61,44 @@ interface AudioDeviceOption {
   deviceId: string
   label: string
 }
+
+interface ResumeProfile {
+  name: string
+  age: number | null
+  gender: string | null
+  targetRoles: string[]
+  workYears: number | null
+  skills: string[]
+  schools: string[]
+  workExperiences: Array<{
+    company: string | null
+    role: string | null
+    period: string | null
+    summary: string | null
+  }>
+  projectExperiences: Array<{
+    name: string | null
+    role: string | null
+    period: string | null
+    techStack: string[]
+    summary: string | null
+  }>
+  personalStrengths: string[]
+}
+
+interface InterviewQuestion {
+  order: number
+  difficulty: 'easy' | 'medium' | 'hard'
+  question: string
+}
+
+interface ResumeAnalysisResult {
+  fileName: string
+  resumeProfile: ResumeProfile
+  interviewQuestions: InterviewQuestion[]
+}
+
+type ResumeAnalysisStage = 'idle' | 'uploading' | 'analyzing' | 'ready' | 'error';
 
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit',
@@ -184,10 +227,62 @@ function formatMessageTime(createdAt: number) {
   return timeFormatter.format(new Date(createdAt));
 }
 
+function buildInterviewContext(resumeAnalysis: ResumeAnalysisResult) {
+  const { resumeProfile, interviewQuestions } = resumeAnalysis;
+  const targetRoles = resumeProfile.targetRoles.join(' / ') || '待你根据候选人经历判断';
+  const skills = resumeProfile.skills.slice(0, 8).join('、') || '简历未明确列出';
+  const strengths = resumeProfile.personalStrengths.slice(0, 4).join('；') || '请结合经历继续追问';
+  const workHighlights = resumeProfile.workExperiences
+    .slice(0, 3)
+    .map((experience, index) => `${index + 1}. ${experience.company ?? '未知公司'}｜${experience.role ?? '未知岗位'}｜${experience.summary ?? '请结合履历追问该段经历'}`)
+    .join('\n');
+  const projectHighlights = resumeProfile.projectExperiences
+    .slice(0, 3)
+    .map((experience, index) => `${index + 1}. ${experience.name ?? '未知项目'}｜${experience.role ?? '未知角色'}｜${experience.summary ?? '请围绕项目细节深入追问'}`)
+    .join('\n');
+  const questionList = interviewQuestions
+    .map(question => `${question.order}. [${question.difficulty}] ${question.question}`)
+    .join('\n');
+
+  return `以下是本轮面试必须使用的候选人简历信息，请先吸收这些上下文，再开始正式面试。
+
+候选人信息：
+- 姓名：${resumeProfile.name}
+- 目标岗位：${targetRoles}
+- 工作年限：${resumeProfile.workYears ?? '未知'}
+- 核心技能：${skills}
+- 个人优势：${strengths}
+
+工作经历摘要：
+${workHighlights || '暂无明确工作经历摘要'}
+
+项目经历摘要：
+${projectHighlights || '暂无明确项目经历摘要'}
+
+优先使用以下题目推进本轮面试，并结合候选人的实时回答继续追问：
+${questionList}`;
+}
+
+function getResumeUploadButtonLabel(stage: ResumeAnalysisStage, fileName: string | null) {
+  switch (stage) {
+    case 'uploading':
+      return '正在上传简历...';
+    case 'analyzing':
+      return '正在分析简历...';
+    case 'ready':
+      return fileName ? `已解析 ${fileName}` : '简历解析完成';
+    case 'error':
+      return '重新上传简历';
+    default:
+      return '上传简历';
+  }
+}
+
 export default function InterviewPageClient() {
   const { data: session, isPending: isSessionPending } = authClient.useSession();
   const conversationRef = useRef<ElevenConversationType | null>(null);
   const rafRef = useRef<number | null>(null);
+  const resumeInputRef = useRef<HTMLInputElement | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [statusText, setStatusText] = useState('disconnected');
@@ -199,11 +294,23 @@ export default function InterviewPageClient() {
   const [hasMicPermission, setHasMicPermission] = useState(false);
   const [inputLevel, setInputLevel] = useState(0.08);
   const [outputLevel, setOutputLevel] = useState(0.08);
+  const [resumeAnalysisStage, setResumeAnalysisStage] = useState<ResumeAnalysisStage>('idle');
+  const [resumeAnalysis, setResumeAnalysis] = useState<ResumeAnalysisResult | null>(null);
+  const isDeveloperMode = isDeveloperModeEnabled();
 
   const isConnected = statusText === 'connected';
   const showExpandedSidebar = !isSidebarCollapsed || isMobileSidebarOpen;
   const interviewStage = formatInterviewStage(statusText, modeText);
   const connectionSummary = formatStatusSummary(statusText);
+  const resumeUploadButtonLabel = getResumeUploadButtonLabel(
+    resumeAnalysisStage,
+    resumeAnalysis?.fileName ?? null,
+  );
+  const isResumeBusy = resumeAnalysisStage === 'uploading' || resumeAnalysisStage === 'analyzing';
+  const preparedInterviewContext = useMemo(
+    () => (resumeAnalysis ? buildInterviewContext(resumeAnalysis) : null),
+    [resumeAnalysis],
+  );
 
   const selectedDeviceLabel = useMemo(() => {
     if (selectedInputDeviceId === 'default') {
@@ -315,8 +422,74 @@ export default function InterviewPageClient() {
     };
   }, [stopMeterLoop]);
 
+  const handleResumeUploadClick = useCallback(() => {
+    if (isResumeBusy || isSessionPending || (!session?.user && !isDeveloperMode)) {
+      return;
+    }
+
+    resumeInputRef.current?.click();
+  }, [isDeveloperMode, isResumeBusy, isSessionPending, session?.user]);
+
+  const handleResumeFileChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    setErrorText(null);
+    setResumeAnalysis(null);
+    setResumeAnalysisStage('uploading');
+
+    try {
+      const formData = new FormData();
+      formData.append('resume', file);
+
+      setResumeAnalysisStage('analyzing');
+
+      const response = await fetch('/api/interview/parse-resume', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string
+        stage?: string
+        fileName?: string
+        resumeProfile?: ResumeProfile
+        interviewQuestions?: InterviewQuestion[]
+      } | null;
+
+      if (!response.ok || !payload?.resumeProfile || !payload?.interviewQuestions || !payload.fileName) {
+        const defaultMessage = payload?.stage === 'question-generation'
+          ? '简历已解析，但生成面试题失败'
+          : '简历分析失败';
+        throw new Error(payload?.error ?? defaultMessage);
+      }
+
+      setResumeAnalysis({
+        fileName: payload.fileName,
+        resumeProfile: payload.resumeProfile,
+        interviewQuestions: payload.interviewQuestions,
+      });
+      setResumeAnalysisStage('ready');
+    }
+    catch (error) {
+      setResumeAnalysisStage('error');
+      setResumeAnalysis(null);
+      setErrorText(error instanceof Error ? error.message : '简历分析失败');
+    }
+  }, []);
+
   async function startInterview() {
     if (conversationRef.current) {
+      return;
+    }
+
+    if (!preparedInterviewContext) {
+      toast.warning('请先上传并解析简历，再开始面试。');
       return;
     }
 
@@ -347,6 +520,16 @@ export default function InterviewPageClient() {
 
       const tokenPayload = (await tokenResponse.json()) as { token: string };
       let connectedDuringSetup = false;
+      let hasSentPreparedContext = false;
+
+      const sendPreparedContext = (session: ElevenConversationType) => {
+        if (hasSentPreparedContext) {
+          return;
+        }
+
+        hasSentPreparedContext = true;
+        session.sendContextualUpdate(preparedInterviewContext);
+      };
 
       const session = await VoiceConversation.startSession({
         connectionType: 'webrtc',
@@ -357,6 +540,7 @@ export default function InterviewPageClient() {
           connectedDuringSetup = true;
 
           if (conversationRef.current) {
+            sendPreparedContext(conversationRef.current);
             startMeterLoop(conversationRef.current);
           }
         },
@@ -394,6 +578,7 @@ export default function InterviewPageClient() {
       conversationRef.current = session;
 
       if (connectedDuringSetup || session.isOpen()) {
+        sendPreparedContext(session);
         startMeterLoop(session);
       }
     }
@@ -495,6 +680,69 @@ export default function InterviewPageClient() {
               ? null
               : (
                   <>
+                    <section className='border-border/60 border-b py-3'>
+                      <input
+                        accept='application/pdf,.pdf'
+                        className='hidden'
+                        onChange={handleResumeFileChange}
+                        ref={resumeInputRef}
+                        type='file'
+                      />
+
+                      <p className='mb-3 font-medium text-sm'>简历设置</p>
+
+                      <Button
+                        className='w-full justify-start'
+                        disabled={isResumeBusy || isSessionPending || (!session?.user && !isDeveloperMode)}
+                        onClick={handleResumeUploadClick}
+                        type='button'
+                        variant='outline'
+                      >
+                        {isResumeBusy
+                          ? <LoaderCircleIcon className='size-4 animate-spin' />
+                          : <UploadIcon className='size-4' />}
+                        <span className='truncate'>{resumeUploadButtonLabel}</span>
+                      </Button>
+
+                      <p className='mt-3 text-muted-foreground text-xs leading-relaxed'>
+                        仅支持 PDF。上传后会自动解析候选人信息并生成本轮面试题，再交给面试 Agent 使用。
+                      </p>
+
+                      <div className='mt-3 grid gap-2 text-xs'>
+                        <div className='rounded-lg border border-border/60 bg-background/60 px-3 py-2'>
+                          <p className='text-muted-foreground'>当前状态</p>
+                          <p className='mt-1 font-medium text-sm'>
+                            {resumeAnalysisStage === 'ready'
+                              ? '简历与题目已就绪'
+                              : resumeAnalysisStage === 'error'
+                                ? '简历分析失败'
+                                : resumeAnalysisStage === 'analyzing'
+                                  ? '正在分析简历'
+                                  : resumeAnalysisStage === 'uploading'
+                                    ? '正在上传简历'
+                                    : '尚未上传简历'}
+                          </p>
+                        </div>
+
+                        {resumeAnalysis
+                          ? (
+                              <div className='rounded-lg border border-border/60 bg-background/60 px-3 py-2'>
+                                <p className='truncate font-medium text-sm'>{resumeAnalysis.fileName}</p>
+                                <p className='mt-1 text-muted-foreground'>
+                                  {resumeAnalysis.resumeProfile.name}
+                                  {' · '}
+                                  {resumeAnalysis.resumeProfile.targetRoles[0] ?? '待识别岗位'}
+                                  {' · '}
+                                  {resumeAnalysis.interviewQuestions.length}
+                                  {' '}
+                                  道题
+                                </p>
+                              </div>
+                            )
+                          : null}
+                      </div>
+                    </section>
+
                     <section className='border-border/60 border-b py-3'>
                       <p className='mb-3 font-medium text-sm'>音频设备</p>
 

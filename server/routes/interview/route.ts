@@ -98,15 +98,15 @@ export const interviewRouter = factory.createApp()
     const resume = formData.get('resume');
 
     if (!(resume instanceof File)) {
-      return c.json({ error: 'Missing resume PDF file.' }, 400);
+      return c.json({ error: '缺少简历 PDF 文件。' }, 400);
     }
 
     if (!isPdfFile(resume)) {
-      return c.json({ error: 'Only PDF resumes are supported.' }, 400);
+      return c.json({ error: '仅支持上传 PDF 简历。' }, 400);
     }
 
     if (resume.size > MAX_RESUME_FILE_SIZE) {
-      return c.json({ error: 'Resume PDF must be 10MB or smaller.' }, 400);
+      return c.json({ error: '简历 PDF 不能超过 10 MB。' }, 400);
     }
 
     const baseURL = process.env.GOOGLE_GENERATIVE_AI_BASE_URL?.trim();
@@ -142,16 +142,17 @@ export const interviewRouter = factory.createApp()
                 text: `你是一名简历信息提取助手。请从上传的 PDF 简历中提取候选人信息，并严格输出符合 schema 的 JSON。
 
 提取规则：
-1. name 必须是候选人姓名，不能为空，也不要填写学校名、公司名或岗位名。
-2. age 只有在简历明确给出时才填写数字，否则返回 null。不要根据毕业年份猜测年龄。
-3. gender 只有在简历明确给出时才填写，否则返回 null。
+1. name 必须是候选人姓名，不能为空，也不要填写学校名、公司名或岗位名；如果简历中无法确认姓名，返回“未发现信息”。
+2. 对于 schema 中的字符串字段（如 gender、工作经历/项目经历中的 company、role、period、summary、name 等），如果简历中没有明确给出，请优先返回“未发现信息”，不要留空字符串。
+3. age 只有在简历明确给出时才填写数字，否则返回 null。不要根据毕业年份猜测年龄。
 4. targetRoles 可能为多个；如果简历没有明确写求职岗位或求职意向，返回空数组。
 5. workYears 只有在简历能明确判断时才返回数字；不能稳定判断时返回 null。
 6. skills、schools、personalStrengths 统一返回数组；未知时返回空数组。
 7. workExperiences、projectExperiences 统一返回数组；没有则返回空数组。
 8. personalStrengths 可以基于简历内容做简要归纳，但必须有简历依据，不要编造。
 9. 工作经历和项目经历中的 summary 保持简洁，只保留关键职责、成果或内容。
-10. 所有数组字段去重，不要输出重复项。`,
+10. 所有数组字段去重，不要输出重复项。
+11. 必须严格输出符合 schema 的 JSON；如果缺少信息，按上述规则使用“未发现信息”或 null/空数组补齐，不要省略字段。`,
               },
               {
                 type: 'file',
@@ -193,7 +194,7 @@ export const interviewRouter = factory.createApp()
 
 出题规则：
 1. 题目必须与候选人的 targetRoles 高度相关；如果 targetRoles 有多个，优先围绕最核心、最明确的岗位方向出题。
-2. 如果 targetRoles 为空，则根据 skills、workExperiences、projectExperiences 推断最可能的岗位方向出题。
+2. 如果 targetRoles 为空，则根据 skills、workExperiences、projectExperiences 推断最可能的岗位方向出题；字符串值为“未发现信息”时视为未知信息，不要围绕它出题。
 3. 题目必须由简入深：
    - 第 1-3 题为 easy，聚焦背景了解、经历澄清、基础能力验证。
    - 第 4-7 题为 medium，聚焦项目细节、技术选型、实现思路、问题排查。
