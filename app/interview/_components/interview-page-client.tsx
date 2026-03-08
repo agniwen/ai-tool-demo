@@ -227,40 +227,51 @@ function formatMessageTime(createdAt: number) {
   return timeFormatter.format(new Date(createdAt));
 }
 
-function buildInterviewContext(resumeAnalysis: ResumeAnalysisResult) {
-  const { resumeProfile, interviewQuestions } = resumeAnalysis;
-  const targetRoles = resumeProfile.targetRoles.join(' / ') || '待你根据候选人经历判断';
-  const skills = resumeProfile.skills.slice(0, 8).join('、') || '简历未明确列出';
-  const strengths = resumeProfile.personalStrengths.slice(0, 4).join('；') || '请结合经历继续追问';
+function formatResumeText(value: string | null | undefined) {
+  const normalized = value?.trim();
+  return normalized || '未发现信息';
+}
+
+function formatResumeList(values: string[], limit?: number) {
+  const normalized = values
+    .map(value => value.trim())
+    .filter(Boolean)
+    .slice(0, limit);
+
+  return normalized.length > 0 ? normalized.join('、') : '未发现信息';
+}
+
+function buildCandidateProfileVariable(resumeAnalysis: ResumeAnalysisResult) {
+  const { resumeProfile } = resumeAnalysis;
   const workHighlights = resumeProfile.workExperiences
     .slice(0, 3)
-    .map((experience, index) => `${index + 1}. ${experience.company ?? '未知公司'}｜${experience.role ?? '未知岗位'}｜${experience.summary ?? '请结合履历追问该段经历'}`)
+    .map((experience, index) => `${index + 1}. ${formatResumeText(experience.company)}｜${formatResumeText(experience.role)}｜${formatResumeText(experience.summary)}`)
     .join('\n');
   const projectHighlights = resumeProfile.projectExperiences
     .slice(0, 3)
-    .map((experience, index) => `${index + 1}. ${experience.name ?? '未知项目'}｜${experience.role ?? '未知角色'}｜${experience.summary ?? '请围绕项目细节深入追问'}`)
+    .map((experience, index) => `${index + 1}. ${formatResumeText(experience.name)}｜${formatResumeText(experience.role)}｜${formatResumeText(experience.summary)}`)
     .join('\n');
-  const questionList = interviewQuestions
+
+  return `姓名：${formatResumeText(resumeProfile.name)}
+目标岗位：${formatResumeList(resumeProfile.targetRoles, 4)}
+工作年限：${resumeProfile.workYears ?? '未发现信息'}
+年龄：${resumeProfile.age ?? '未发现信息'}
+性别：${formatResumeText(resumeProfile.gender)}
+核心技能：${formatResumeList(resumeProfile.skills, 10)}
+毕业院校：${formatResumeList(resumeProfile.schools, 4)}
+个人优势：${formatResumeList(resumeProfile.personalStrengths, 6)}
+
+工作经历：
+${workHighlights || '未发现信息'}
+
+项目经历：
+${projectHighlights || '未发现信息'}`;
+}
+
+function buildInterviewQuestionsVariable(resumeAnalysis: ResumeAnalysisResult) {
+  return resumeAnalysis.interviewQuestions
     .map(question => `${question.order}. [${question.difficulty}] ${question.question}`)
     .join('\n');
-
-  return `以下是本轮面试必须使用的候选人简历信息，请先吸收这些上下文，再开始正式面试。
-
-候选人信息：
-- 姓名：${resumeProfile.name}
-- 目标岗位：${targetRoles}
-- 工作年限：${resumeProfile.workYears ?? '未知'}
-- 核心技能：${skills}
-- 个人优势：${strengths}
-
-工作经历摘要：
-${workHighlights || '暂无明确工作经历摘要'}
-
-项目经历摘要：
-${projectHighlights || '暂无明确项目经历摘要'}
-
-优先使用以下题目推进本轮面试，并结合候选人的实时回答继续追问：
-${questionList}`;
 }
 
 function getResumeUploadButtonLabel(stage: ResumeAnalysisStage, fileName: string | null) {
@@ -307,10 +318,6 @@ export default function InterviewPageClient() {
     resumeAnalysis?.fileName ?? null,
   );
   const isResumeBusy = resumeAnalysisStage === 'uploading' || resumeAnalysisStage === 'analyzing';
-  const preparedInterviewContext = useMemo(
-    () => (resumeAnalysis ? buildInterviewContext(resumeAnalysis) : null),
-    [resumeAnalysis],
-  );
 
   const selectedDeviceLabel = useMemo(() => {
     if (selectedInputDeviceId === 'default') {
@@ -488,7 +495,7 @@ export default function InterviewPageClient() {
       return;
     }
 
-    if (!preparedInterviewContext) {
+    if (!resumeAnalysis) {
       toast.warning('请先上传并解析简历，再开始面试。');
       return;
     }
@@ -520,27 +527,23 @@ export default function InterviewPageClient() {
 
       const tokenPayload = (await tokenResponse.json()) as { token: string };
       let connectedDuringSetup = false;
-      let hasSentPreparedContext = false;
-
-      const sendPreparedContext = (session: ElevenConversationType) => {
-        if (hasSentPreparedContext) {
-          return;
-        }
-
-        hasSentPreparedContext = true;
-        session.sendContextualUpdate(preparedInterviewContext);
-      };
+      const candidateProfileVariable = buildCandidateProfileVariable(resumeAnalysis);
+      const interviewQuestionsVariable = buildInterviewQuestionsVariable(resumeAnalysis);
 
       const session = await VoiceConversation.startSession({
         connectionType: 'webrtc',
         conversationToken: tokenPayload.token,
+        dynamicVariables: {
+          user_name: resumeAnalysis.resumeProfile.name,
+          candidate_profile: candidateProfileVariable,
+          interview_questions: interviewQuestionsVariable,
+        },
         inputDeviceId: selectedInputDeviceId === 'default' ? undefined : selectedInputDeviceId,
         onConnect: () => {
           setStatusText('connected');
           connectedDuringSetup = true;
 
           if (conversationRef.current) {
-            sendPreparedContext(conversationRef.current);
             startMeterLoop(conversationRef.current);
           }
         },
@@ -578,7 +581,6 @@ export default function InterviewPageClient() {
       conversationRef.current = session;
 
       if (connectedDuringSetup || session.isOpen()) {
-        sendPreparedContext(session);
         startMeterLoop(session);
       }
     }
