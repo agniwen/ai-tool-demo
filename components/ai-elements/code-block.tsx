@@ -16,6 +16,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -400,7 +401,9 @@ export function CodeBlockContent({
   const rawTokens = useMemo(() => createRawTokens(code), [code]);
 
   // Try to get cached result synchronously, otherwise use raw tokens
-  const [tokenized, setTokenized] = useState<TokenizedCode>(
+  const [tokenized, updateTokenized] = useReducer(
+    (_: TokenizedCode, nextTokenized: TokenizedCode) => nextTokenized,
+    null,
     () => highlightCode(code, language) ?? rawTokens,
   );
 
@@ -408,12 +411,12 @@ export function CodeBlockContent({
     let cancelled = false;
 
     // Reset to raw tokens when code changes (shows current code, not stale tokens)
-    setTokenized(highlightCode(code, language) ?? rawTokens);
+    updateTokenized(highlightCode(code, language) ?? rawTokens);
 
     // Subscribe to async highlighting result
     highlightCode(code, language, (result) => {
       if (!cancelled) {
-        setTokenized(result);
+        updateTokenized(result);
       }
     });
 

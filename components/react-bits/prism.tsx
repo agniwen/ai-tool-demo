@@ -22,12 +22,14 @@ interface PrismProps {
   timeScale?: number
 }
 
+const DEFAULT_OFFSET = { x: 0, y: 0 };
+
 const Prism: React.FC<PrismProps> = ({
   height = 3.5,
   baseWidth = 5.5,
   animationType = 'rotate',
   glow = 1,
-  offset = { x: 0, y: 0 },
+  offset = DEFAULT_OFFSET,
   noise = 0.5,
   transparent = true,
   scale = 3.6,

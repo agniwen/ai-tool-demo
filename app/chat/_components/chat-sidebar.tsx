@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -72,7 +72,19 @@ export default function ChatSidebar() {
   const isMobileSidebarOpen = useAtomValue(isMobileSidebarOpenAtom);
   const closeMobileSidebar = useSetAtom(isMobileSidebarOpenAtom);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
-  const [currentPathname, setCurrentPathname] = useState(pathname);
+  const currentPathname = useSyncExternalStore(
+    useCallback((onStoreChange: () => void) => {
+      window.addEventListener('popstate', onStoreChange);
+      window.addEventListener('chat:session-path-updated', onStoreChange);
+
+      return () => {
+        window.removeEventListener('popstate', onStoreChange);
+        window.removeEventListener('chat:session-path-updated', onStoreChange);
+      };
+    }, []),
+    () => window.location.pathname,
+    () => pathname,
+  );
 
   // Better auth session
   const { data: session, isPending } = authClient.useSession();
@@ -96,35 +108,6 @@ export default function ChatSidebar() {
 
     return id ? decodeURIComponent(id) : null;
   }, [currentPathname, params.sessionId]);
-
-  useEffect(() => {
-    setCurrentPathname(pathname);
-  }, [pathname]);
-
-  useEffect(() => {
-    const syncPathFromWindow = () => {
-      setCurrentPathname(window.location.pathname);
-    };
-
-    const syncPathFromCustomEvent = (event: Event) => {
-      const detail = (event as CustomEvent<{ pathname?: string }>).detail;
-
-      if (detail?.pathname) {
-        setCurrentPathname(detail.pathname);
-        return;
-      }
-
-      setCurrentPathname(window.location.pathname);
-    };
-
-    window.addEventListener('popstate', syncPathFromWindow);
-    window.addEventListener('chat:session-path-updated', syncPathFromCustomEvent);
-
-    return () => {
-      window.removeEventListener('popstate', syncPathFromWindow);
-      window.removeEventListener('chat:session-path-updated', syncPathFromCustomEvent);
-    };
-  }, []);
 
   const refreshConversationList = useCallback(async () => {
     const rows = await chatHistoryDB.conversations

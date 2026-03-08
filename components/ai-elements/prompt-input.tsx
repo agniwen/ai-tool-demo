@@ -24,7 +24,6 @@ import {
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import {
-  Children,
   createContext,
   use,
   useCallback,
@@ -127,7 +126,7 @@ export interface PromptInputControllerProps {
   ) => void
 }
 
-const PromptInputController = createContext<PromptInputControllerProps | null>(
+const PromptInputControllerContext = createContext<PromptInputControllerProps | null>(
   null,
 );
 const ProviderAttachmentsContext = createContext<AttachmentsContext | null>(
@@ -135,7 +134,7 @@ const ProviderAttachmentsContext = createContext<AttachmentsContext | null>(
 );
 
 export function usePromptInputController() {
-  const ctx = use(PromptInputController);
+  const ctx = use(PromptInputControllerContext);
   if (!ctx) {
     throw new Error(
       'Wrap your component inside <PromptInputProvider> to use usePromptInputController().',
@@ -146,7 +145,7 @@ export function usePromptInputController() {
 
 // Optional variants (do NOT throw). Useful for dual-mode components.
 function useOptionalPromptInputController() {
-  return use(PromptInputController);
+  return use(PromptInputControllerContext);
 }
 
 export function useProviderAttachments() {
@@ -283,11 +282,11 @@ export function PromptInputProvider({
   );
 
   return (
-    <PromptInputController.Provider value={controller}>
+    <PromptInputControllerContext value={controller}>
       <ProviderAttachmentsContext value={attachments}>
         {children}
       </ProviderAttachmentsContext>
-    </PromptInputController.Provider>
+    </PromptInputControllerContext>
   );
 }
 
@@ -1029,8 +1028,13 @@ export function PromptInputButton({
   tooltip,
   ...props
 }: PromptInputButtonProps) {
+  const childCount = Array.isArray(props.children)
+    ? props.children.filter(child => child != null).length
+    : props.children == null
+      ? 0
+      : 1;
   const newSize
-    = size ?? (Children.count(props.children) > 1 ? 'sm' : 'icon-sm');
+    = size ?? (childCount > 1 ? 'sm' : 'icon-sm');
 
   const button = (
     <InputGroupButton

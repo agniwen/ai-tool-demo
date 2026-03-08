@@ -71,12 +71,12 @@ export const Reasoning = memo(
     // Track if defaultOpen was explicitly set to false (to prevent auto-open)
     const isExplicitlyClosed = defaultOpen === false;
 
-    const [isOpen, setIsOpen] = useControllableState<boolean>({
+    const [isOpen, updateOpenState] = useControllableState<boolean>({
       defaultProp: resolvedDefaultOpen,
       onChange: onOpenChange,
       prop: open,
     });
-    const [duration, setDuration] = useControllableState<number | undefined>({
+    const [duration, updateDurationState] = useControllableState<number | undefined>({
       defaultProp: undefined,
       prop: durationProp,
     });
@@ -94,17 +94,26 @@ export const Reasoning = memo(
         }
       }
       else if (startTimeRef.current !== null) {
-        setDuration(Math.ceil((Date.now() - startTimeRef.current) / MS_IN_S));
+        const nextDuration = Math.ceil((Date.now() - startTimeRef.current) / MS_IN_S);
+        const timer = window.setTimeout(() => {
+          updateDurationState(nextDuration);
+        }, 0);
         startTimeRef.current = null;
+
+        return () => window.clearTimeout(timer);
       }
-    }, [isStreaming, setDuration]);
+    }, [isStreaming, updateDurationState]);
 
     // Auto-open when streaming starts (unless explicitly closed)
     useEffect(() => {
       if (isStreaming && !isOpen && !isExplicitlyClosed) {
-        setIsOpen(true);
+        const timer = window.setTimeout(() => {
+          updateOpenState(true);
+        }, 0);
+
+        return () => window.clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, setIsOpen, isExplicitlyClosed]);
+    }, [isStreaming, isOpen, updateOpenState, isExplicitlyClosed]);
 
     // Auto-close when streaming ends (once only, and only if it ever streamed)
     useEffect(() => {
@@ -115,24 +124,24 @@ export const Reasoning = memo(
         && !hasAutoClosed
       ) {
         const timer = setTimeout(() => {
-          setIsOpen(false);
+          updateOpenState(false);
           setHasAutoClosed(true);
         }, AUTO_CLOSE_DELAY);
 
         return () => clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed]);
+    }, [isStreaming, isOpen, updateOpenState, hasAutoClosed]);
 
     const handleOpenChange = useCallback(
       (newOpen: boolean) => {
-        setIsOpen(newOpen);
+        updateOpenState(newOpen);
       },
-      [setIsOpen],
+      [updateOpenState],
     );
 
     const contextValue = useMemo(
-      () => ({ duration, isOpen, isStreaming, setIsOpen }),
-      [duration, isOpen, isStreaming, setIsOpen],
+      () => ({ duration, isOpen, isStreaming, setIsOpen: updateOpenState }),
+      [duration, isOpen, isStreaming, updateOpenState],
     );
 
     return (

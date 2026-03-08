@@ -21,6 +21,7 @@ interface ColorBendsProps {
 }
 
 const MAX_COLORS = 8 as const;
+const DEFAULT_COLORS: string[] = [];
 
 const frag = `
 #define MAX_COLORS ${MAX_COLORS}
@@ -119,7 +120,7 @@ export default function ColorBends({
   style,
   rotation = 45,
   speed = 0.2,
-  colors = [],
+  colors = DEFAULT_COLORS,
   transparent = true,
   autoRotate = 0,
   scale = 1,
@@ -133,7 +134,6 @@ export default function ColorBends({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const rafRef = useRef<number | null>(null);
   const materialRef = useRef<THREE.ShaderMaterial | null>(null);
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const rotationRef = useRef<number>(rotation);
   const autoRotateRef = useRef<number>(autoRotate);
   const pointerTargetRef = useRef<THREE.Vector2>(new THREE.Vector2(0, 0));
@@ -205,9 +205,8 @@ export default function ColorBends({
 
     handleResize();
 
-    const ro = new ResizeObserver(handleResize);
-    ro.observe(container);
-    resizeObserverRef.current = ro;
+    const resizeObserver = new ResizeObserver(handleResize);
+    resizeObserver.observe(container);
 
     const loop = () => {
       const dt = clock.getDelta();
@@ -233,8 +232,7 @@ export default function ColorBends({
     return () => {
       if (rafRef.current !== null)
         cancelAnimationFrame(rafRef.current);
-      if (resizeObserverRef.current)
-        resizeObserverRef.current.disconnect();
+      resizeObserver.disconnect();
       geometry.dispose();
       material.dispose();
       renderer.dispose();

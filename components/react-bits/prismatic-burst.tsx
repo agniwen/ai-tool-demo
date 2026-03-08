@@ -20,6 +20,8 @@ export interface PrismaticBurstProps {
   mixBlendMode?: React.CSSProperties['mixBlendMode'] | 'none'
 }
 
+const DEFAULT_OFFSET: Offset = { x: 0, y: 0 };
+
 const vertexShader = `#version 300 es
 in vec2 position;
 in vec2 uv;
@@ -229,7 +231,7 @@ function PrismaticBurst({
   colors,
   distort = 0,
   paused = false,
-  offset = { x: 0, y: 0 },
+  offset = DEFAULT_OFFSET,
   hoverDampness = 0,
   rayCount,
   mixBlendMode = 'lighten',
