@@ -22,7 +22,6 @@ import {
   Trash2Icon,
   UserIcon,
 } from 'lucide-react';
-import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Attachment,
@@ -104,6 +103,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useHydrated } from '@/hooks/use-hydrated';
 import { authClient } from '@/lib/auth-client';
 import {
   chatHistoryDB,
@@ -403,6 +403,7 @@ export default function ChatPageClient({
   initialSessionId: string | null
 }) {
   const { data: session, isPending: isSessionPending } = authClient.useSession();
+  const isHydrated = useHydrated();
   const isMobileSidebarOpen = useAtomValue(isMobileSidebarOpenAtom);
   const setIsMobileSidebarOpen = useSetAtom(isMobileSidebarOpenAtom);
   const [input, setInput] = useState('');
@@ -426,6 +427,7 @@ export default function ChatPageClient({
   const userName = session?.user?.name ?? '用户';
   const userEmail = session?.user?.email ?? '';
   const userInitials = getInitials(session?.user?.name, session?.user?.email);
+  const showSessionLoadingState = !isHydrated || isSessionPending;
 
   const handleSignIn = useCallback(() => {
     authClient.signIn.social({
@@ -727,6 +729,23 @@ export default function ChatPageClient({
     [stop, updateSessionInUrl, setMessages],
   );
 
+  const resetToNewConversation = useCallback(() => {
+    stop();
+    setActiveConversationId(null);
+    setMessages([]);
+    setInput('');
+    setJobDescription('');
+    setJobDescriptionDraft('');
+    setUploadErrorMessage(null);
+    setHistoryErrorMessage(null);
+    setIsJobDescriptionDialogOpen(false);
+  }, [stop, setMessages]);
+
+  const startNewConversation = useCallback(() => {
+    resetToNewConversation();
+    updateSessionInUrl(null);
+  }, [resetToNewConversation, updateSessionInUrl]);
+
   useEffect(() => {
     const bootstrap = async () => {
       try {
@@ -735,7 +754,7 @@ export default function ChatPageClient({
           return;
         }
 
-        setHistoryErrorMessage(null);
+        resetToNewConversation();
       }
       catch {
         setHistoryErrorMessage('本地聊天记录不可用，侧边栏将不显示历史记录。');
@@ -746,7 +765,19 @@ export default function ChatPageClient({
     };
 
     void bootstrap();
-  }, [initialSessionId, openConversation]);
+  }, [initialSessionId, openConversation, resetToNewConversation]);
+
+  useEffect(() => {
+    const handleStartNewConversation = () => {
+      startNewConversation();
+    };
+
+    window.addEventListener('chat:start-new-conversation', handleStartNewConversation);
+
+    return () => {
+      window.removeEventListener('chat:start-new-conversation', handleStartNewConversation);
+    };
+  }, [startNewConversation]);
 
   useEffect(() => {
     if (!shouldNormalizeSessionPath || activeConversationId) {
@@ -830,7 +861,7 @@ export default function ChatPageClient({
       <header className='mb-4 px-1 '>
         <div className='mb-2 flex items-center justify-between gap-2 sm:hidden'>
           <div className='flex items-center gap-2'>
-            {isSessionPending
+            {showSessionLoadingState
               ? (
                   <div className='h-9 w-9 animate-pulse rounded-md bg-muted' />
                 )
@@ -877,11 +908,9 @@ export default function ChatPageClient({
               聊天记录
             </Button>
           </div>
-          <Button asChild size='sm' type='button' variant='ghost'>
-            <Link href='/chat'>
-              <PlusIcon className='mr-1 size-4' />
-              新建
-            </Link>
+          <Button onClick={startNewConversation} size='sm' type='button' variant='ghost'>
+            <PlusIcon className='mr-1 size-4' />
+            新建
           </Button>
         </div>
         <h1 className='pixel-title text-balance font-bold tracking-tight text-2xl sm:text-3xl'>

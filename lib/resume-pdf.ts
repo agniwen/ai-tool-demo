@@ -1,4 +1,5 @@
 import type { UIMessage } from 'ai';
+import { decodeDataUrl } from '@/lib/data-url';
 
 export interface UploadedResumePdf {
   id: string
@@ -39,7 +40,6 @@ const NULL_BYTE_REGEX = /\0/g;
 const WINDOWS_LINE_BREAK_REGEX = /\r\n/g;
 const CARRIAGE_RETURN_REGEX = /\r/g;
 const EXCESSIVE_NEWLINES_REGEX = /\n{3,}/g;
-const DATA_URL_REGEX = /^data:([^,]*),([\s\S]*)$/;
 const SECTION_BREAK_HEADING_REGEX = /教育|技能|项目|实习|经历|工作|荣誉|证书|自我评价|objective|education|skills|projects|experience/i;
 const CJK_NAME_REGEX = /^[\u4E00-\u9FA5]{2,4}$/;
 const LATIN_NAME_REGEX = /^[A-Z]+(?:\s+[A-Z]+){1,2}$/i;
@@ -156,27 +156,9 @@ function firstRegexMatch(text: string, pattern: RegExp, group = 1): string | nul
   return value && value.length > 0 ? value : null;
 }
 
-function decodeDataUrlToBytes(dataUrl: string): Uint8Array {
-  const match = dataUrl.match(DATA_URL_REGEX);
-
-  if (!match) {
-    throw new Error('Invalid data URL format.');
-  }
-
-  const meta = match[1] ?? '';
-  const payload = match[2] ?? '';
-  const isBase64 = meta.includes(';base64');
-
-  if (isBase64) {
-    return Uint8Array.from(Buffer.from(payload, 'base64'));
-  }
-
-  return Uint8Array.from(Buffer.from(decodeURIComponent(payload), 'utf8'));
-}
-
 async function readPdfBytes(url: string): Promise<Uint8Array> {
   if (url.startsWith('data:')) {
-    return decodeDataUrlToBytes(url);
+    return decodeDataUrl(url).data;
   }
 
   if (url.startsWith('https://') || url.startsWith('http://')) {

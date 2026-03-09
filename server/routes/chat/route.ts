@@ -3,6 +3,7 @@ import type { ParsedResumePdf, UploadedResumePdf } from '@/lib/resume-pdf';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { zValidator } from '@hono/zod-validator';
 import { convertToModelMessages, stepCountIs, streamText } from 'ai';
+import { decodeDataUrl } from '@/lib/data-url';
 import {
   collectUploadedResumePdfs,
   parseResumePdf,
@@ -172,6 +173,17 @@ ${jdContext}
 ${autoJdContext}
 
 已上传简历文件：${uploadedResumeFiles ? '是' : '否'}。`,
+      experimental_download: async requests => requests.map(({ url }) => {
+        if (url.protocol !== 'data:') {
+          return null;
+        }
+
+        const decoded = decodeDataUrl(url.toString());
+        return {
+          data: decoded.data,
+          mediaType: decoded.mediaType,
+        };
+      }),
       messages: await convertToModelMessages(messages),
       stopWhen: stepCountIs(8),
       tools: {

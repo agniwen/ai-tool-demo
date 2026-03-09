@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import {
   ChevronsUpDownIcon,
@@ -25,6 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useHydrated } from '@/hooks/use-hydrated';
 import { authClient } from '@/lib/auth-client';
 import { chatHistoryDB } from '@/lib/chat-history-db';
 import { cn } from '@/lib/utils';
@@ -72,6 +74,7 @@ export default function ChatSidebar() {
   const isMobileSidebarOpen = useAtomValue(isMobileSidebarOpenAtom);
   const closeMobileSidebar = useSetAtom(isMobileSidebarOpenAtom);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
+  const isHydrated = useHydrated();
   const currentPathname = useSyncExternalStore(
     useCallback((onStoreChange: () => void) => {
       window.addEventListener('popstate', onStoreChange);
@@ -125,6 +128,12 @@ export default function ChatSidebar() {
     );
   }, []);
 
+  const handleStartNewConversation = useCallback(() => {
+    closeMobileSidebar(false);
+    window.dispatchEvent(new CustomEvent('chat:start-new-conversation'));
+    router.replace('/chat');
+  }, [closeMobileSidebar, router]);
+
   useEffect(() => {
     const initialTimerId = window.setTimeout(() => {
       void refreshConversationList();
@@ -162,6 +171,105 @@ export default function ChatSidebar() {
   const userName = session?.user?.name ?? '用户';
   const userEmail = session?.user?.email ?? '';
   const userInitials = getInitials(session?.user?.name, session?.user?.email);
+  const showSessionLoadingState = !isHydrated || isPending;
+  let expandedUserSection: ReactNode;
+
+  if (showSessionLoadingState) {
+    expandedUserSection = <div className='h-9 w-full animate-pulse rounded-full bg-muted' />;
+  }
+  else if (session?.user) {
+    expandedUserSection = (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            className='w-full justify-start gap-2 p-1! rounded-full'
+            type='button'
+            variant='ghost'
+          >
+            <Avatar size='default'>
+              <AvatarImage alt={userName} src={session.user.image ?? undefined} />
+              <AvatarFallback>{userInitials}</AvatarFallback>
+            </Avatar>
+            <div className='min-w-0 flex-1 text-left'>
+              <p className='truncate font-medium text-sm'>{userName}</p>
+              <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
+            </div>
+            <ChevronsUpDownIcon className='size-4 text-muted-foreground' />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align='end' className='w-56'>
+          <DropdownMenuLabel className='space-y-0.5'>
+            <p className='truncate font-medium text-sm'>{userName}</p>
+            <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={handleSignOut} variant='destructive'>
+            <LogOutIcon className='mr-2 size-4' />
+            退出登录
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+  else {
+    expandedUserSection = <GoogleSignInButton callbackURL='/chat' />;
+  }
+
+  let collapsedUserSection: ReactNode;
+
+  if (showSessionLoadingState) {
+    collapsedUserSection = <div className='h-9 w-full animate-pulse rounded-md bg-muted' />;
+  }
+  else if (session?.user) {
+    collapsedUserSection = (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            aria-label='用户菜单'
+            className='w-full'
+            size='icon'
+            type='button'
+            variant='ghost'
+          >
+            <Avatar size='sm'>
+              <AvatarImage alt={userName} src={session.user.image ?? undefined} />
+              <AvatarFallback>{userInitials}</AvatarFallback>
+            </Avatar>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align='end' className='w-56'>
+          <DropdownMenuLabel className='space-y-0.5'>
+            <p className='truncate font-medium text-sm'>{userName}</p>
+            <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={handleSignOut} variant='destructive'>
+            <LogOutIcon className='mr-2 size-4' />
+            退出登录
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+  else {
+    collapsedUserSection = (
+      <Button
+        aria-label='登录'
+        className='w-full'
+        onClick={() => {
+          authClient.signIn.social({
+            provider: 'google',
+            callbackURL: '/chat',
+          });
+        }}
+        size='icon'
+        type='button'
+        variant='ghost'
+      >
+        <UserIcon className='size-4' />
+      </Button>
+    );
+  }
 
   return (
     <aside
@@ -199,11 +307,9 @@ export default function ChatSidebar() {
                     <HouseIcon className='size-4' />
                   </Link>
                 </Button>
-                <Button asChild className='hidden sm:flex' size='sm' type='button' variant='outline'>
-                  <Link href='/chat'>
-                    <PlusIcon className='mr-1 size-3.5' />
-                    新建
-                  </Link>
+                <Button className='hidden sm:flex' onClick={handleStartNewConversation} size='sm' type='button' variant='outline'>
+                  <PlusIcon className='mr-1 size-3.5' />
+                  新建
                 </Button>
               </>
             )
@@ -278,99 +384,8 @@ export default function ChatSidebar() {
       {/* User Section */}
       <div className='border-border/65 border-t px-2 py-2'>
         {showExpandedSidebar
-          ? (
-              <div className='flex items-center gap-2'>
-                {isPending
-                  ? (
-                      <div className='h-9 w-full animate-pulse rounded-full bg-muted' />
-                    )
-                  : session?.user
-                    ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              className='w-full justify-start gap-2 p-1! rounded-full'
-                              type='button'
-                              variant='ghost'
-                            >
-                              <Avatar size='default'>
-                                <AvatarImage alt={userName} src={session.user.image ?? undefined} />
-                                <AvatarFallback>{userInitials}</AvatarFallback>
-                              </Avatar>
-                              <div className='min-w-0 flex-1 text-left'>
-                                <p className='truncate font-medium text-sm'>{userName}</p>
-                                <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
-                              </div>
-                              <ChevronsUpDownIcon className='size-4 text-muted-foreground' />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align='end' className='w-56'>
-                            <DropdownMenuLabel className='space-y-0.5'>
-                              <p className='truncate font-medium text-sm'>{userName}</p>
-                              <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
-                            </DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={handleSignOut} variant='destructive'>
-                              <LogOutIcon className='mr-2 size-4' />
-                              退出登录
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )
-                    : (
-                        <GoogleSignInButton callbackURL='/chat' />
-                      )}
-              </div>
-            )
-          : (
-              session?.user
-                ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          aria-label='用户菜单'
-                          className='w-full'
-                          size='icon'
-                          type='button'
-                          variant='ghost'
-                        >
-                          <Avatar size='sm'>
-                            <AvatarImage alt={userName} src={session.user.image ?? undefined} />
-                            <AvatarFallback>{userInitials}</AvatarFallback>
-                          </Avatar>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align='end' className='w-56'>
-                        <DropdownMenuLabel className='space-y-0.5'>
-                          <p className='truncate font-medium text-sm'>{userName}</p>
-                          <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={handleSignOut} variant='destructive'>
-                          <LogOutIcon className='mr-2 size-4' />
-                          退出登录
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )
-                : (
-                    <Button
-                      aria-label='登录'
-                      className='w-full'
-                      onClick={() => {
-                        authClient.signIn.social({
-                          provider: 'google',
-                          callbackURL: '/chat',
-                        });
-                      }}
-                      size='icon'
-                      type='button'
-                      variant='ghost'
-                    >
-                      <UserIcon className='size-4' />
-                    </Button>
-                  )
-            )}
+          ? <div className='flex items-center gap-2'>{expandedUserSection}</div>
+          : collapsedUserSection}
       </div>
     </aside>
   );

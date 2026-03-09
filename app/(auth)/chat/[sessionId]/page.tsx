@@ -7,5 +7,5 @@ export default async function ChatSessionPage({
 }) {
   const { sessionId } = await params;
 
-  return <ChatPageClient initialSessionId={sessionId} />;
+  return <ChatPageClient initialSessionId={sessionId} key={sessionId} />;
 }
