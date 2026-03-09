@@ -22,22 +22,22 @@ import { buildAutoJobDescription } from './utils';
 
 const NORMALIZE_WHITESPACE_REGEX = /\s+/g;
 const ROLE_KEYWORD_MAP: Array<{ keyword: RegExp, role: string }> = [
-  { keyword: /行政/, role: '行政实习生' },
-  { keyword: /人事|HR/, role: '人力资源实习生' },
-  { keyword: /运营/, role: '运营实习生' },
-  { keyword: /产品/, role: '产品实习生' },
-  { keyword: /前端/, role: '前端开发实习生' },
-  { keyword: /后端|服务端|后台/, role: '后端开发实习生' },
-  { keyword: /测试|QA/, role: '测试实习生' },
-  { keyword: /数据分析|数据/, role: '数据分析实习生' },
-  { keyword: /设计|UI|UX/, role: '设计实习生' },
-  { keyword: /财务/, role: '财务实习生' },
+  { keyword: /行政/, role: '行政' },
+  { keyword: /人事|HR/, role: '人力资源' },
+  { keyword: /运营/, role: '运营' },
+  { keyword: /产品/, role: '产品' },
+  { keyword: /前端/, role: '前端开发' },
+  { keyword: /后端|服务端|后台/, role: '后端开发' },
+  { keyword: /测试|QA/, role: '测试' },
+  { keyword: /数据分析|数据/, role: '数据分析' },
+  { keyword: /设计|UI|UX/, role: '设计' },
+  { keyword: /财务/, role: '财务' },
 ];
 const ROLE_INFER_PATTERNS = [
   /(?:我需要招聘|我们需要招聘|需要招聘|招聘)\s*([^，。；\n]{1,24})/,
   /(?:我需要|我们需要|需要)\s*([^，。；\n]{1,24})(?:岗位|职位|方向|人员)?/,
 ];
-const ROLE_STRIP_TERMS_REGEX = /(一名|一位|一个|若干|实习生|岗位|职位|方向|人员|的)/g;
+const ROLE_STRIP_TERMS_REGEX = /(一名|一位|一个|若干|岗位|职位|方向|人员|的)/g;
 
 function extractUserText(messages: UIMessage[]): string {
   return messages
@@ -74,7 +74,7 @@ function inferRoleFromText(text: string): string | null {
       .trim();
 
     if (role.length > 0) {
-      return role.includes('实习') ? role : `${role}实习生`;
+      return role;
     }
   }
 
@@ -146,7 +146,7 @@ export const chatRouter = factory.createApp().post(
     const result = streamText({
       model: provider(modelId),
       system: `你是一名简历筛选助手。
-你的目标是帮助招聘人员快速评估实习候选人。
+你的目标是帮助招聘人员快速评估候选人。
 回答保持简洁、结构化。
 合适时请提供：整体建议（进入面试 / 暂缓 / 淘汰）、评分（0-100）、优势、风险以及后续面试追问问题。
 JD 优先级规则：

@@ -69,16 +69,16 @@ export const getServerTimeTool = tool({
 });
 
 export const getResumeReviewFrameworkTool = tool({
-  description: '返回一个带权重维度的实用实习生简历筛选框架。',
+  description: '返回一个带权重维度的通用简历筛选框架，可用于实习生和社招岗位。',
   inputSchema: z.object({
-    seniority: z.enum(['intern', 'junior', 'mid', 'senior']).optional(),
+    seniority: z.enum(['general', 'intern', 'junior', 'mid', 'senior']).optional(),
     targetRole: z.string().describe('目标岗位，例如前端开发').optional(),
   }),
   execute: async ({ seniority, targetRole }) => {
-    const level = seniority ?? 'intern';
+    const level = seniority ?? 'general';
 
     return {
-      targetRole: targetRole ?? '软件工程实习生',
+      targetRole: targetRole ?? '软件工程岗位',
       seniority: level,
       dimensions: [
         {

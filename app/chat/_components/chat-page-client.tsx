@@ -1214,7 +1214,7 @@ export default function ChatPageClient({
 
           void sendMessageToChat({
             files,
-            text: hasText ? trimmed : '请从实习生招聘视角分析这份简历并给出筛选建议。',
+            text: hasText ? trimmed : '请结合岗位要求分析这份简历并给出筛选建议。',
           });
           setInput('');
         }}
@@ -1227,7 +1227,7 @@ export default function ChatPageClient({
           <PromptInputTextarea
             autoComplete='off'
             onChange={event => setInput(event.currentTarget.value)}
-            placeholder='输入岗位与筛选要求，或上传实习生 PDF 简历（支持多文件）…'
+            placeholder='输入岗位与筛选要求，或上传候选人 PDF 简历（支持多文件）…'
             value={input}
           />
         </PromptInputBody>
@@ -1266,7 +1266,7 @@ export default function ChatPageClient({
               name='jobDescription'
               onChange={event =>
                 setJobDescriptionDraft(event.currentTarget.value)}
-              placeholder='例如：前端开发实习生，要求 React/TypeScript 基础，至少 1 个完整项目经历…'
+              placeholder='例如：前端开发岗位，要求 React/TypeScript 基础，有完整项目经历或相关工作/实习经验…'
               spellCheck={false}
               value={jobDescriptionDraft}
             />

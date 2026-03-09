@@ -37,7 +37,7 @@ export const chatTitleRouter = factory.createApp()
 - 8 到 16 个字，最长不超过 28 字
 - 准确表达任务意图，避免空泛词
 - 不要标点结尾
-- 若消息中提到实习生简历筛选、评分、对比、面试建议等，请体现关键动作
+- 若消息中提到候选人简历筛选、评分、对比、面试建议等，请体现关键动作
 - 若包含上传文件语境（hasFiles=true），可体现"简历"或"附件"语义
 
 hasFiles=${hasFiles ? 'true' : 'false'}

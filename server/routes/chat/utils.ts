@@ -1,10 +1,12 @@
 interface JobDescriptionContext {
-  isInternship: boolean
+  hiringType: 'general' | 'internship' | 'full-time'
   role: string
 }
 
-const ROLE_INTERN_REGEX = /\binternship\b|\bintern\b/gi;
-const ROLE_FULL_TIME_REGEX = /\bfull[- ]?time\b/gi;
+const ROLE_INTERN_KEYWORD_REGEX = /\b(?:internship|intern)\b|实习/i;
+const ROLE_INTERN_NORMALIZE_REGEX = /\b(?:internship|intern)\b/gi;
+const ROLE_FULL_TIME_KEYWORD_REGEX = /\bfull[- ]?time\b|社招|全职|正式/i;
+const ROLE_FULL_TIME_NORMALIZE_REGEX = /\bfull[- ]?time\b/gi;
 const ROLE_WHITESPACE_REGEX = /\s+/g;
 
 const internshipExtraRequirements = [
@@ -42,12 +44,17 @@ function buildPresetJobDescription(
   requirements: string[],
   bonuses: string[],
 ) {
-  const extraRequirements = context.isInternship
-    ? internshipExtraRequirements
-    : fullTimeExtraRequirements;
-  const extraBonuses = context.isInternship
-    ? internshipExtraBonuses
-    : fullTimeExtraBonuses;
+  let extraRequirements: string[] = [];
+  let extraBonuses: string[] = [];
+
+  if (context.hiringType === 'internship') {
+    extraRequirements = internshipExtraRequirements;
+    extraBonuses = internshipExtraBonuses;
+  }
+  else if (context.hiringType === 'full-time') {
+    extraRequirements = fullTimeExtraRequirements;
+    extraBonuses = fullTimeExtraBonuses;
+  }
 
   return [
     `岗位名称: ${context.role}`,
@@ -315,16 +322,28 @@ const JOB_DESCRIPTION_PRESETS: Array<{ keywords: RegExp, jd: (context: JobDescri
 
 function normalizeRoleLabel(role: string): string {
   return role
-    .replace(ROLE_INTERN_REGEX, '实习生')
-    .replace(ROLE_FULL_TIME_REGEX, '正式')
+    .replace(ROLE_INTERN_NORMALIZE_REGEX, '实习')
+    .replace(ROLE_FULL_TIME_NORMALIZE_REGEX, '全职')
     .replace(ROLE_WHITESPACE_REGEX, ' ')
     .trim();
+}
+
+function inferHiringType(role: string): JobDescriptionContext['hiringType'] {
+  if (ROLE_INTERN_KEYWORD_REGEX.test(role)) {
+    return 'internship';
+  }
+
+  if (ROLE_FULL_TIME_KEYWORD_REGEX.test(role)) {
+    return 'full-time';
+  }
+
+  return 'general';
 }
 
 export function buildAutoJobDescription(role: string): string {
   const normalizedRole = normalizeRoleLabel(role);
   const context: JobDescriptionContext = {
-    isInternship: normalizedRole.includes('实习'),
+    hiringType: inferHiringType(normalizedRole),
     role: normalizedRole,
   };
 
