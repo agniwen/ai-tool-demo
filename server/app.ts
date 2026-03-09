@@ -7,6 +7,7 @@ import { betterAuthMiddleware } from './middlewares/better-auth';
 import { chatTitleRouter } from './routes/chat-title/route';
 import { chatRouter } from './routes/chat/route';
 import { interviewRouter } from './routes/interview/route';
+import { interviewNextRouter } from './routes/interview-next/route';
 
 export const app = new Hono<Env>()
   .use(
@@ -29,10 +30,14 @@ export const app = new Hono<Env>()
   .use('/api/interview/parse-resume', authMiddleware)
   .use('/api/interview/token', authMiddleware)
   .use('/api/interview/report/*', authMiddleware)
+  .use('/api/interview-next/parse-resume', authMiddleware)
+  .use('/api/interview-next/token', authMiddleware)
+  .use('/api/interview-next/report/*', authMiddleware)
   .basePath('/api')
   .route('/chat', chatRouter)
   .route('/chat-title', chatTitleRouter)
-  .route('/interview', interviewRouter);
+  .route('/interview', interviewRouter)
+  .route('/interview-next', interviewNextRouter);
 
 app.notFound(c => c.json({ error: 'Not Found' }, 404));
 
