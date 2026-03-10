@@ -1,10 +1,13 @@
 import {
   boolean,
   index,
+  jsonb,
   pgTable,
   text,
   timestamp,
 } from 'drizzle-orm/pg-core';
+import type { InterviewQuestion, ResumeProfile } from '@/lib/interview/types';
+import type { StudioInterviewStatus } from '@/lib/studio-interviews';
 
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
@@ -12,6 +15,10 @@ export const user = pgTable('user', {
   email: text('email').notNull().unique(),
   emailVerified: boolean('email_verified').default(false).notNull(),
   image: text('image'),
+  role: text('role').default('user').notNull(),
+  banned: boolean('banned').default(false).notNull(),
+  banReason: text('ban_reason'),
+  banExpires: timestamp('ban_expires'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at')
     .defaultNow()
@@ -31,6 +38,7 @@ export const session = pgTable(
       .notNull(),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
+    impersonatedBy: text('impersonated_by'),
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
@@ -76,4 +84,30 @@ export const verification = pgTable(
       .notNull(),
   },
   table => [index('verification_identifier_idx').on(table.identifier)],
+);
+
+export const studioInterview = pgTable(
+  'studio_interview',
+  {
+    id: text('id').primaryKey(),
+    candidateName: text('candidate_name').notNull(),
+    candidateEmail: text('candidate_email'),
+    targetRole: text('target_role'),
+    status: text('status').$type<StudioInterviewStatus>().notNull(),
+    resumeFileName: text('resume_file_name').notNull(),
+    resumeProfile: jsonb('resume_profile').$type<ResumeProfile>().notNull(),
+    interviewQuestions: jsonb('interview_questions').$type<InterviewQuestion[]>().notNull(),
+    notes: text('notes'),
+    createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  table => [
+    index('studio_interview_status_idx').on(table.status),
+    index('studio_interview_created_at_idx').on(table.createdAt),
+    index('studio_interview_created_by_idx').on(table.createdBy),
+  ],
 );

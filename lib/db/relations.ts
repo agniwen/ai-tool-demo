@@ -11,10 +11,17 @@ export const relations = defineRelations(schema, r => ({
   user: {
     account: r.many.account(),
     session: r.many.session(),
+    studioInterview: r.many.studioInterview(),
   },
   session: {
     user: r.one.user({
       from: r.session.userId,
+      to: r.user.id,
+    }),
+  },
+  studioInterview: {
+    user: r.one.user({
+      from: r.studioInterview.createdBy,
       to: r.user.id,
     }),
   },
