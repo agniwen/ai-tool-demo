@@ -1,13 +1,14 @@
+import type { InterviewQuestion, ResumeProfile } from '@/lib/interview/types';
+import type { StudioInterviewStatus } from '@/lib/studio-interviews';
 import {
   boolean,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
   timestamp,
 } from 'drizzle-orm/pg-core';
-import type { InterviewQuestion, ResumeProfile } from '@/lib/interview/types';
-import type { StudioInterviewStatus } from '@/lib/studio-interviews';
 
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
@@ -94,9 +95,9 @@ export const studioInterview = pgTable(
     candidateEmail: text('candidate_email'),
     targetRole: text('target_role'),
     status: text('status').$type<StudioInterviewStatus>().notNull(),
-    resumeFileName: text('resume_file_name').notNull(),
-    resumeProfile: jsonb('resume_profile').$type<ResumeProfile>().notNull(),
-    interviewQuestions: jsonb('interview_questions').$type<InterviewQuestion[]>().notNull(),
+    resumeFileName: text('resume_file_name'),
+    resumeProfile: jsonb('resume_profile').$type<ResumeProfile | null>(),
+    interviewQuestions: jsonb('interview_questions').$type<InterviewQuestion[]>().notNull().default([]),
     notes: text('notes'),
     createdBy: text('created_by').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -109,5 +110,28 @@ export const studioInterview = pgTable(
     index('studio_interview_status_idx').on(table.status),
     index('studio_interview_created_at_idx').on(table.createdAt),
     index('studio_interview_created_by_idx').on(table.createdBy),
+  ],
+);
+
+export const studioInterviewSchedule = pgTable(
+  'studio_interview_schedule',
+  {
+    id: text('id').primaryKey(),
+    interviewRecordId: text('interview_record_id')
+      .notNull()
+      .references(() => studioInterview.id, { onDelete: 'cascade' }),
+    roundLabel: text('round_label').notNull(),
+    scheduledAt: timestamp('scheduled_at'),
+    notes: text('notes'),
+    sortOrder: integer('sort_order').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  table => [
+    index('studio_interview_schedule_record_idx').on(table.interviewRecordId),
+    index('studio_interview_schedule_sort_idx').on(table.interviewRecordId, table.sortOrder),
   ],
 );

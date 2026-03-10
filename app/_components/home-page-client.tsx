@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { SignInRequiredDialog } from '@/components/auth/sign-in-required-dialog';
 import { FadeContent } from '@/components/react-bits/fade-content';
 import Prism from '@/components/react-bits/prism';
@@ -61,6 +62,10 @@ export default function HomePageClient() {
     }
 
     setPendingPath(href);
+  };
+
+  const handleInterviewPreviewClick = () => {
+    toast.info('目前仅内测，即将开放使用');
   };
 
   return (
@@ -125,7 +130,7 @@ export default function HomePageClient() {
             <Button
               className='rounded-xl bg-card/70 px-5 py-3 ring-1 ring-border/70 font-medium text-foreground text-sm transition-colors transition-transform duration-300 ease-out hover:-translate-y-0.5 hover:bg-card'
               disabled={isPending}
-              onClick={() => handleProtectedNavigation('/interview')}
+              onClick={handleInterviewPreviewClick}
               type='button'
               variant='outline'
             >

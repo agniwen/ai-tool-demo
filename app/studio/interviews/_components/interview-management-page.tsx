@@ -1,18 +1,20 @@
 'use client';
 
+import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import type { StudioInterviewRecord } from '@/lib/studio-interviews';
 import {
+
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
   getSortedRowModel,
-  type ColumnDef,
-  type SortingState,
+
   useReactTable,
 } from '@tanstack/react-table';
 import {
   ArrowUpDownIcon,
   BotIcon,
+  CopyIcon,
   EyeIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -94,6 +96,16 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
   const [editRecord, setEditRecord] = useState<StudioInterviewRecord | null>(null);
   const [deleteRecord, setDeleteRecord] = useState<StudioInterviewRecord | null>(null);
 
+  async function copyInterviewLink(record: StudioInterviewRecord) {
+    try {
+      await navigator.clipboard.writeText(new URL(record.interviewLink, window.location.origin).toString());
+      toast.success('面试链接已复制');
+    }
+    catch {
+      toast.error('复制失败，请手动复制');
+    }
+  }
+
   const columns = useMemo<ColumnDef<StudioInterviewRecord>[]>(() => [
     {
       accessorKey: 'candidateName',
@@ -124,7 +136,7 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
     {
       accessorKey: 'resumeFileName',
       header: '简历文件',
-      cell: ({ row }) => <div className='max-w-48 truncate text-sm'>{row.original.resumeFileName}</div>,
+      cell: ({ row }) => <div className='max-w-48 truncate text-sm'>{row.original.resumeFileName || '手动创建'}</div>,
     },
     {
       accessorKey: 'status',
@@ -136,6 +148,26 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
         }
 
         return row.getValue(id) === value;
+      },
+    },
+    {
+      id: 'currentRound',
+      header: '当前轮次',
+      cell: ({ row }) => {
+        const currentEntry = row.original.scheduleEntries[0];
+
+        if (!currentEntry) {
+          return '未安排';
+        }
+
+        return (
+          <div className='min-w-0'>
+            <p className='truncate text-sm font-medium'>{currentEntry.roundLabel}</p>
+            <p className='truncate text-muted-foreground text-xs'>
+              {currentEntry.scheduledAt ? formatDateTime(currentEntry.scheduledAt) : '时间待定'}
+            </p>
+          </div>
+        );
       },
     },
     {
@@ -170,6 +202,10 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
             <DropdownMenuContent align='end' className='w-44'>
               <DropdownMenuLabel>操作</DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => void copyInterviewLink(record)}>
+                <CopyIcon className='size-4' />
+                复制面试链接
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setDetailRecord(record)}>
                 <EyeIcon className='size-4' />
                 查看详情
@@ -219,6 +255,7 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
         row.original.candidateEmail,
         row.original.targetRole,
         row.original.resumeFileName,
+        ...row.original.scheduleEntries.map(item => item.roundLabel),
       ].some(value => value?.toLowerCase().includes(search));
     },
   });
@@ -227,6 +264,7 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
     total: records.length,
     ready: records.filter(item => item.status === 'ready').length,
     completed: records.filter(item => item.status === 'completed').length,
+    rounds: records.reduce((count, item) => count + item.scheduleEntries.length, 0),
   }), [records]);
 
   async function handleDelete() {
@@ -256,10 +294,10 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
         <section className='rounded-[1.75rem] border border-border/60 bg-background px-6 py-6 shadow-sm lg:px-8 lg:py-8'>
           <div className='flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between'>
             <div className='max-w-2xl space-y-3'>
-              <Badge variant='secondary'>Studio / AI 面试管理</Badge>
-              <h1 className='text-balance font-semibold text-3xl tracking-tight'>候选人 AI 面试管理台</h1>
+              <Badge variant='secondary'>Studio / 简历库</Badge>
+              <h1 className='text-balance font-semibold text-3xl tracking-tight'>候选人面试简历库</h1>
               <p className='text-muted-foreground leading-relaxed'>
-                使用 TanStack Table 管理候选人面试记录；创建时可直接上传简历，系统会沿用现有简历解析能力自动生成用户信息与面试题。
+                管理候选人简历、面试流程与多轮时间安排，并为每位候选人生成唯一的面试入口链接。
               </p>
             </div>
             <CreateInterviewDialog onCreated={record => setRecords(previous => [record, ...previous])} />
@@ -268,9 +306,9 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
 
         <section className='grid gap-4 md:grid-cols-3'>
           {[
-            { label: '总记录数', value: `${summary.total}`, hint: '所有已创建的候选人面试单' },
-            { label: '待面试', value: `${summary.ready}`, hint: '已解析完成，可进入面试阶段' },
-            { label: '已完成', value: `${summary.completed}`, hint: '已经完成流程，可复盘结果' },
+            { label: '总记录数', value: `${summary.total}`, hint: '所有候选人简历与流程记录' },
+            { label: '待面试', value: `${summary.ready}`, hint: '流程已准备好，可发送链接开始面试' },
+            { label: '面试轮次数', value: `${summary.rounds}`, hint: '所有候选人累计安排的轮次总数' },
           ].map(item => (
             <Card className='border-border/60 bg-background/92' key={item.label}>
               <CardHeader className='pb-2'>
@@ -287,13 +325,13 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
         <Card className='border-border/60 bg-background/95'>
           <CardHeader className='gap-4 lg:flex-row lg:items-end lg:justify-between'>
             <div>
-              <CardTitle>面试记录表</CardTitle>
-              <CardDescription>支持搜索、状态筛选、查看详情、编辑和删除。</CardDescription>
+              <CardTitle>简历库记录</CardTitle>
+              <CardDescription>支持搜索、状态筛选、复制链接、查看详情、编辑和删除。</CardDescription>
             </div>
             <div className='flex flex-col gap-3 sm:flex-row'>
               <div className='relative min-w-[240px]'>
                 <SearchIcon className='pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground' />
-                <Input className='pl-9' onChange={event => setGlobalFilter(event.target.value)} placeholder='搜索候选人、岗位或简历名' value={globalFilter} />
+                <Input className='pl-9' onChange={event => setGlobalFilter(event.target.value)} placeholder='搜索候选人、岗位、轮次或简历名' value={globalFilter} />
               </div>
               <Select onValueChange={value => setStatusFilter(value as typeof statusFilter)} value={statusFilter}>
                 <SelectTrigger className='min-w-[180px]'>
@@ -346,9 +384,9 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
                       <EmptyMedia variant='icon'>
                         <BotIcon className='size-5' />
                       </EmptyMedia>
-                      <EmptyTitle>还没有 AI 面试记录</EmptyTitle>
+                      <EmptyTitle>还没有候选人简历记录</EmptyTitle>
                       <EmptyDescription>
-                        先创建一条候选人面试单，上传 PDF 简历后，后台会自动生成用户信息与题目。
+                        先创建一条候选人简历记录，可以直接手动录入，也可以上传 PDF 自动分析并生成面试题。
                       </EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent>
@@ -374,7 +412,9 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除这条面试记录？</AlertDialogTitle>
             <AlertDialogDescription>
-              删除后将无法恢复，包括候选人解析信息和 AI 题目。当前记录：{deleteRecord?.candidateName ?? '未知候选人'}。
+              删除后将无法恢复，包括候选人解析信息和 AI 题目。当前记录：
+              {deleteRecord?.candidateName ?? '未知候选人'}
+              。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -1,11 +1,36 @@
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { studioInterview, studioInterviewSchedule } from '@/lib/db/schema';
 import { getInterviewReport, saveInterviewReport } from '@/lib/interview-report-store';
+import { buildCandidateInterviewView, sortScheduleEntries } from '@/lib/interview/interview-record';
 import { factory } from '@/server/factory';
 import { analyzeResumeFile, ResumeAnalysisError } from './analysis';
 
 const elevenlabs = new ElevenLabsClient({
   apiKey: process.env.ELEVENLABS_API_KEY,
 });
+
+async function loadCandidateInterviewRecord(id: string) {
+  const [record] = await db.select().from(studioInterview).where(eq(studioInterview.id, id)).limit(1);
+
+  if (!record || record.status === 'archived') {
+    return null;
+  }
+
+  const scheduleEntries = await db
+    .select()
+    .from(studioInterviewSchedule)
+    .where(eq(studioInterviewSchedule.interviewRecordId, id));
+
+  return buildCandidateInterviewView(record, sortScheduleEntries(scheduleEntries));
+}
+
+function buildTokenErrorResponse() {
+  return {
+    error: 'Missing ELEVENLABS_API_KEY or ELEVENLABS_AGENT_ID in environment variables.',
+  };
+}
 
 export const interviewRouter = factory.createApp()
   .post('/parse-resume', async (c) => {
@@ -41,7 +66,7 @@ export const interviewRouter = factory.createApp()
             error: error.message,
             stage: 'resume-parsing',
           },
-          status,
+          status as any,
         );
       }
 
@@ -53,48 +78,6 @@ export const interviewRouter = factory.createApp()
         500,
       );
     }
-  })
-  .get('/token', async (c) => {
-    const apiKey = process.env.ELEVENLABS_API_KEY;
-    const agentId = process.env.ELEVENLABS_AGENT_ID || process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
-
-    if (!apiKey || !agentId) {
-      return c.json(
-        {
-          error: 'Missing ELEVENLABS_API_KEY or ELEVENLABS_AGENT_ID in environment variables.',
-        },
-        500,
-      );
-    }
-
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${encodeURIComponent(agentId)}`,
-      {
-        headers: {
-          'xi-api-key': apiKey,
-        },
-        method: 'GET',
-      },
-    );
-
-    if (!response.ok) {
-      const bodyText = await response.text();
-
-      return c.json(
-        {
-          error: 'Failed to generate conversation token.',
-          detail: bodyText,
-          upstreamStatus: response.status,
-        },
-        500,
-      );
-    }
-
-    const data = (await response.json()) as {
-      token: string
-    };
-
-    return c.json({ token: data.token });
   })
   .post('/webhook', async (c) => {
     const rawBody = await c.req.raw.text();
@@ -153,4 +136,58 @@ export const interviewRouter = factory.createApp()
     }
 
     return c.json(report);
+  })
+  .get('/:id/token', async (c) => {
+    const id = c.req.param('id');
+    const interviewRecord = await loadCandidateInterviewRecord(id);
+
+    if (!interviewRecord) {
+      return c.json({ error: 'Interview not available.' }, 404);
+    }
+
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    const agentId = process.env.ELEVENLABS_AGENT_ID || process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
+
+    if (!apiKey || !agentId) {
+      return c.json(buildTokenErrorResponse(), 500);
+    }
+
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${encodeURIComponent(agentId)}`,
+      {
+        headers: {
+          'xi-api-key': apiKey,
+        },
+        method: 'GET',
+      },
+    );
+
+    if (!response.ok) {
+      const bodyText = await response.text();
+
+      return c.json(
+        {
+          error: 'Failed to generate conversation token.',
+          detail: bodyText,
+          upstreamStatus: response.status,
+        },
+        500,
+      );
+    }
+
+    const data = (await response.json()) as {
+      token: string
+    };
+
+    return c.json({ token: data.token });
+  })
+  .get('/:id', async (c) => {
+    const id = c.req.param('id');
+    const interviewRecord = await loadCandidateInterviewRecord(id);
+
+    if (!interviewRecord) {
+      return c.json({ error: 'Interview not available.' }, 404);
+    }
+
+    return c.json(interviewRecord);
   });

@@ -1,21 +1,18 @@
 'use client';
 
 import type { Conversation as ElevenConversationType } from '@elevenlabs/client';
-import type { ChangeEvent } from 'react';
+import type { CandidateInterviewView } from '@/lib/interview/interview-record';
 import { Conversation as VoiceConversation } from '@elevenlabs/client';
 import {
   AudioLinesIcon,
-  ChevronsUpDownIcon,
+  CalendarDaysIcon,
   HouseIcon,
   LoaderCircleIcon,
-  LogOutIcon,
   MicIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   PhoneOffIcon,
   SparklesIcon,
-  UploadIcon,
-  UserIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,17 +25,8 @@ import {
 } from '@/components/ai-elements/conversation';
 import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message';
 import { PromptInput, PromptInputBody, PromptInputFooter } from '@/components/ai-elements/prompt-input';
-import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Select,
   SelectContent,
@@ -46,8 +34,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { authClient } from '@/lib/auth-client';
-import { isDeveloperModeEnabled } from '@/lib/developer-mode';
 import { cn } from '@/lib/utils';
 
 interface Turn {
@@ -62,110 +48,11 @@ interface AudioDeviceOption {
   label: string
 }
 
-interface ResumeProfile {
-  name: string
-  age: number | null
-  gender: string | null
-  targetRoles: string[]
-  workYears: number | null
-  skills: string[]
-  schools: string[]
-  workExperiences: Array<{
-    company: string | null
-    role: string | null
-    period: string | null
-    summary: string | null
-  }>
-  projectExperiences: Array<{
-    name: string | null
-    role: string | null
-    period: string | null
-    techStack: string[]
-    summary: string | null
-  }>
-  personalStrengths: string[]
-}
-
-interface InterviewQuestion {
-  order: number
-  difficulty: 'easy' | 'medium' | 'hard'
-  question: string
-}
-
-interface ResumeAnalysisResult {
-  fileName: string
-  resumeProfile: ResumeProfile
-  interviewQuestions: InterviewQuestion[]
-}
-
-type ResumeAnalysisStage = 'idle' | 'uploading' | 'analyzing' | 'ready' | 'error';
-
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
 });
-
-const WHITESPACE_REGEX = /\s+/;
-
-function getInitials(name?: string | null, email?: string | null) {
-  const source = (name ?? email ?? '').trim();
-
-  if (!source) {
-    return 'U';
-  }
-
-  const words = source.split(WHITESPACE_REGEX).filter(Boolean);
-
-  if (words.length >= 2) {
-    return `${words[0]![0]}${words[1]![0]}`.toUpperCase();
-  }
-
-  return source.slice(0, 2).toUpperCase();
-}
-
-function pickMessage(event: unknown): Omit<Turn, 'id' | 'createdAt'> | null {
-  if (!event || typeof event !== 'object') {
-    return null;
-  }
-
-  const value = event as Record<string, unknown>;
-
-  if (typeof value.source === 'string' && typeof value.message === 'string') {
-    return {
-      role: value.source === 'user' ? 'user' : 'agent',
-      text: value.message,
-    };
-  }
-
-  if (value.type === 'user_transcript') {
-    const transcript = (value.user_transcription_event as {
-      user_transcript?: unknown
-    } | undefined)?.user_transcript;
-
-    if (typeof transcript === 'string' && transcript.trim()) {
-      return {
-        role: 'user',
-        text: transcript,
-      };
-    }
-  }
-
-  if (value.type === 'agent_response') {
-    const response = (value.agent_response_event as {
-      agent_response?: unknown
-    } | undefined)?.agent_response;
-
-    if (typeof response === 'string' && response.trim()) {
-      return {
-        role: 'agent',
-        text: response,
-      };
-    }
-  }
-
-  return null;
-}
 
 function formatInterviewStage(statusText: string, modeText: string) {
   if (statusText === 'connecting') {
@@ -194,6 +81,20 @@ function formatStatusSummary(statusText: string) {
     default:
       return '尚未开始';
   }
+}
+
+function formatDateTime(value: string | Date | null | undefined) {
+  if (!value) {
+    return '待定';
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value));
 }
 
 function LevelBar({
@@ -241,8 +142,13 @@ function formatResumeList(values: string[], limit?: number) {
   return normalized.length > 0 ? normalized.join('、') : '未发现信息';
 }
 
-function buildCandidateProfileVariable(resumeAnalysis: ResumeAnalysisResult) {
-  const { resumeProfile } = resumeAnalysis;
+function buildCandidateProfileVariable(interviewRecord: CandidateInterviewView) {
+  const { resumeProfile } = interviewRecord;
+
+  if (!resumeProfile) {
+    return `姓名：${interviewRecord.candidateName}\n目标岗位：${formatResumeText(interviewRecord.targetRole)}`;
+  }
+
   const workHighlights = resumeProfile.workExperiences
     .slice(0, 3)
     .map((experience, index) => `${index + 1}. ${formatResumeText(experience.company)}｜${formatResumeText(experience.role)}｜${formatResumeText(experience.summary)}`)
@@ -268,32 +174,56 @@ ${workHighlights || '未发现信息'}
 ${projectHighlights || '未发现信息'}`;
 }
 
-function buildInterviewQuestionsVariable(resumeAnalysis: ResumeAnalysisResult) {
-  return resumeAnalysis.interviewQuestions
+function buildInterviewQuestionsVariable(interviewRecord: CandidateInterviewView) {
+  return interviewRecord.interviewQuestions
     .map(question => `${question.order}. [${question.difficulty}] ${question.question}`)
     .join('\n');
 }
 
-function getResumeUploadButtonLabel(stage: ResumeAnalysisStage, fileName: string | null) {
-  switch (stage) {
-    case 'uploading':
-      return '正在上传简历...';
-    case 'analyzing':
-      return '正在分析简历...';
-    case 'ready':
-      return fileName ? `已解析 ${fileName}` : '简历解析完成';
-    case 'error':
-      return '重新上传简历';
-    default:
-      return '上传简历';
+function pickMessage(event: unknown): Omit<Turn, 'id' | 'createdAt'> | null {
+  if (!event || typeof event !== 'object') {
+    return null;
   }
+
+  const value = event as Record<string, unknown>;
+
+  if (typeof value.source === 'string' && typeof value.message === 'string') {
+    return {
+      role: value.source === 'user' ? 'user' : 'agent',
+      text: value.message,
+    };
+  }
+
+  if (value.type === 'user_transcript') {
+    const transcript = (value.user_transcription_event as { user_transcript?: unknown } | undefined)?.user_transcript;
+
+    if (typeof transcript === 'string' && transcript.trim()) {
+      return {
+        role: 'user',
+        text: transcript,
+      };
+    }
+  }
+
+  if (value.type === 'agent_response') {
+    const response = (value.agent_response_event as { agent_response?: unknown } | undefined)?.agent_response;
+
+    if (typeof response === 'string' && response.trim()) {
+      return {
+        role: 'agent',
+        text: response,
+      };
+    }
+  }
+
+  return null;
 }
 
-export default function InterviewPageClient() {
-  const { data: session, isPending: isSessionPending } = authClient.useSession();
+export default function InterviewPageClient({ interviewId }: { interviewId: string }) {
   const conversationRef = useRef<ElevenConversationType | null>(null);
   const rafRef = useRef<number | null>(null);
-  const resumeInputRef = useRef<HTMLInputElement | null>(null);
+  const [interviewRecord, setInterviewRecord] = useState<CandidateInterviewView | null>(null);
+  const [isLoadingRecord, setIsLoadingRecord] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [statusText, setStatusText] = useState('disconnected');
@@ -305,19 +235,11 @@ export default function InterviewPageClient() {
   const [hasMicPermission, setHasMicPermission] = useState(false);
   const [inputLevel, setInputLevel] = useState(0.08);
   const [outputLevel, setOutputLevel] = useState(0.08);
-  const [resumeAnalysisStage, setResumeAnalysisStage] = useState<ResumeAnalysisStage>('idle');
-  const [resumeAnalysis, setResumeAnalysis] = useState<ResumeAnalysisResult | null>(null);
-  const isDeveloperMode = isDeveloperModeEnabled();
 
   const isConnected = statusText === 'connected';
   const showExpandedSidebar = !isSidebarCollapsed || isMobileSidebarOpen;
   const interviewStage = formatInterviewStage(statusText, modeText);
   const connectionSummary = formatStatusSummary(statusText);
-  const resumeUploadButtonLabel = getResumeUploadButtonLabel(
-    resumeAnalysisStage,
-    resumeAnalysis?.fileName ?? null,
-  );
-  const isResumeBusy = resumeAnalysisStage === 'uploading' || resumeAnalysisStage === 'analyzing';
 
   const selectedDeviceLabel = useMemo(() => {
     if (selectedInputDeviceId === 'default') {
@@ -336,6 +258,14 @@ export default function InterviewPageClient() {
     () => turns.toReversed().find(turn => turn.role === 'user') ?? null,
     [turns],
   );
+
+  const resumeSummary = useMemo(() => {
+    if (!interviewRecord?.resumeProfile) {
+      return '本次面试将基于后台维护的候选人信息进行。';
+    }
+
+    return `${interviewRecord.resumeProfile.name} · ${interviewRecord.resumeProfile.targetRoles[0] ?? interviewRecord.targetRole ?? '待识别岗位'} · ${interviewRecord.interviewQuestions.length} 道题`;
+  }, [interviewRecord]);
 
   const stopMeterLoop = useCallback(() => {
     if (rafRef.current != null) {
@@ -359,14 +289,6 @@ export default function InterviewPageClient() {
     tick();
   }, [stopMeterLoop]);
 
-  const handleSignOut = useCallback(async () => {
-    await authClient.signOut();
-  }, []);
-
-  const userName = session?.user?.name ?? '用户';
-  const userEmail = session?.user?.email ?? '';
-  const userInitials = getInitials(session?.user?.name, session?.user?.email);
-
   const loadAudioDevices = useCallback(async (requestPermission: boolean) => {
     if (!navigator.mediaDevices?.enumerateDevices) {
       return;
@@ -381,7 +303,7 @@ export default function InterviewPageClient() {
 
       const devices = await navigator.mediaDevices.enumerateDevices();
       const nextAudioDevices = devices
-        .filter(device => device.kind === 'audioinput')
+        .filter(device => device.kind === 'audioinput' && Boolean(device.deviceId))
         .map((device, index) => ({
           deviceId: device.deviceId,
           label: device.label || `麦克风 ${index + 1}`,
@@ -401,6 +323,44 @@ export default function InterviewPageClient() {
       setErrorText(message);
     }
   }, [selectedInputDeviceId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadInterviewRecord() {
+      setIsLoadingRecord(true);
+      setErrorText(null);
+
+      try {
+        const response = await fetch(`/api/interview/${interviewId}`, { cache: 'no-store' });
+        const payload = (await response.json().catch(() => null)) as (CandidateInterviewView & { error?: string }) | null;
+
+        if (!response.ok || !payload || 'error' in payload) {
+          throw new Error(payload?.error ?? '面试记录不可用');
+        }
+
+        if (isMounted) {
+          setInterviewRecord(payload);
+        }
+      }
+      catch (error) {
+        if (isMounted) {
+          setInterviewRecord(null);
+          setErrorText(error instanceof Error ? (error.message === 'Interview not available.' ? '当前面试链接不可用。' : error.message) : '面试记录不可用');
+        }
+      }
+      finally {
+        if (isMounted) {
+          setIsLoadingRecord(false);
+        }
+      }
+    }
+
+    void loadInterviewRecord();
+    return () => {
+      isMounted = false;
+    };
+  }, [interviewId]);
 
   useEffect(() => {
     void loadAudioDevices(false);
@@ -429,74 +389,13 @@ export default function InterviewPageClient() {
     };
   }, [stopMeterLoop]);
 
-  const handleResumeUploadClick = useCallback(() => {
-    if (isResumeBusy || isSessionPending || (!session?.user && !isDeveloperMode)) {
-      return;
-    }
-
-    resumeInputRef.current?.click();
-  }, [isDeveloperMode, isResumeBusy, isSessionPending, session?.user]);
-
-  const handleResumeFileChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-
-    event.target.value = '';
-
-    if (!file) {
-      return;
-    }
-
-    setErrorText(null);
-    setResumeAnalysis(null);
-    setResumeAnalysisStage('uploading');
-
-    try {
-      const formData = new FormData();
-      formData.append('resume', file);
-
-      setResumeAnalysisStage('analyzing');
-
-      const response = await fetch('/api/interview/parse-resume', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const payload = (await response.json().catch(() => null)) as {
-        error?: string
-        stage?: string
-        fileName?: string
-        resumeProfile?: ResumeProfile
-        interviewQuestions?: InterviewQuestion[]
-      } | null;
-
-      if (!response.ok || !payload?.resumeProfile || !payload?.interviewQuestions || !payload.fileName) {
-        const defaultMessage = payload?.stage === 'question-generation'
-          ? '简历已解析，但生成面试题失败'
-          : '简历分析失败';
-        throw new Error(payload?.error ?? defaultMessage);
-      }
-
-      setResumeAnalysis({
-        fileName: payload.fileName,
-        resumeProfile: payload.resumeProfile,
-        interviewQuestions: payload.interviewQuestions,
-      });
-      setResumeAnalysisStage('ready');
-    }
-    catch (error) {
-      setResumeAnalysisStage('error');
-      setResumeAnalysis(null);
-      setErrorText(error instanceof Error ? error.message : '简历分析失败');
-    }
-  }, []);
-
   async function startInterview() {
     if (conversationRef.current) {
       return;
     }
 
-    if (!resumeAnalysis) {
-      toast.warning('请先上传并解析简历，再开始面试。');
+    if (!interviewRecord) {
+      toast.warning('当前面试链接不可用，无法开始面试。');
       return;
     }
 
@@ -516,25 +415,23 @@ export default function InterviewPageClient() {
       stream.getTracks().forEach(track => track.stop());
       await loadAudioDevices(false);
 
-      const tokenResponse = await fetch('/api/interview/token', { cache: 'no-store' });
+      const tokenResponse = await fetch(`/api/interview/${interviewId}/token`, { cache: 'no-store' });
 
       if (!tokenResponse.ok) {
-        const payload = (await tokenResponse.json().catch(() => null)) as {
-          error?: string
-        } | null;
+        const payload = (await tokenResponse.json().catch(() => null)) as { error?: string } | null;
         throw new Error(payload?.error ?? '无法开始面试');
       }
 
       const tokenPayload = (await tokenResponse.json()) as { token: string };
       let connectedDuringSetup = false;
-      const candidateProfileVariable = buildCandidateProfileVariable(resumeAnalysis);
-      const interviewQuestionsVariable = buildInterviewQuestionsVariable(resumeAnalysis);
+      const candidateProfileVariable = buildCandidateProfileVariable(interviewRecord);
+      const interviewQuestionsVariable = buildInterviewQuestionsVariable(interviewRecord);
 
       const session = await VoiceConversation.startSession({
         connectionType: 'webrtc',
         conversationToken: tokenPayload.token,
         dynamicVariables: {
-          user_name: resumeAnalysis.resumeProfile.name,
+          user_name: interviewRecord.candidateName,
           candidate_profile: candidateProfileVariable,
           interview_questions: interviewQuestionsVariable,
         },
@@ -645,7 +542,7 @@ export default function InterviewPageClient() {
             {showExpandedSidebar
               ? (
                   <>
-                    <p className='truncate font-medium text-sm'>设置与状态</p>
+                    <p className='truncate font-medium text-sm'>候选人信息</p>
                     <Button asChild className='ml-auto' size='icon' type='button' variant='ghost'>
                       <Link aria-label='返回首页' href='/'>
                         <HouseIcon className='size-4' />
@@ -683,66 +580,35 @@ export default function InterviewPageClient() {
               : (
                   <>
                     <section className='border-border/60 border-b py-3'>
-                      <input
-                        accept='application/pdf,.pdf'
-                        className='hidden'
-                        onChange={handleResumeFileChange}
-                        ref={resumeInputRef}
-                        type='file'
-                      />
+                      <p className='mb-3 font-medium text-sm'>候选人概览</p>
 
-                      <p className='mb-3 font-medium text-sm'>简历设置</p>
-
-                      <Button
-                        className='w-full justify-start'
-                        disabled={isResumeBusy || isSessionPending || (!session?.user && !isDeveloperMode)}
-                        onClick={handleResumeUploadClick}
-                        type='button'
-                        variant='outline'
-                      >
-                        {isResumeBusy
-                          ? <LoaderCircleIcon className='size-4 animate-spin' />
-                          : <UploadIcon className='size-4' />}
-                        <span className='truncate'>{resumeUploadButtonLabel}</span>
-                      </Button>
-
-                      <p className='mt-3 text-muted-foreground text-xs leading-relaxed'>
-                        仅支持 PDF。上传后会自动解析候选人信息并生成本轮面试题，再交给面试 Agent 使用。
-                      </p>
-
-                      <div className='mt-3 grid gap-2 text-xs'>
-                        <div className='rounded-lg border border-border/60 bg-background/60 px-3 py-2'>
-                          <p className='text-muted-foreground'>当前状态</p>
-                          <p className='mt-1 font-medium text-sm'>
-                            {resumeAnalysisStage === 'ready'
-                              ? '简历与题目已就绪'
-                              : resumeAnalysisStage === 'error'
-                                ? '简历分析失败'
-                                : resumeAnalysisStage === 'analyzing'
-                                  ? '正在分析简历'
-                                  : resumeAnalysisStage === 'uploading'
-                                    ? '正在上传简历'
-                                    : '尚未上传简历'}
-                          </p>
-                        </div>
-
-                        {resumeAnalysis
+                      {isLoadingRecord
+                        ? <div className='h-28 animate-pulse rounded-xl bg-muted' />
+                        : interviewRecord
                           ? (
-                              <div className='rounded-lg border border-border/60 bg-background/60 px-3 py-2'>
-                                <p className='truncate font-medium text-sm'>{resumeAnalysis.fileName}</p>
-                                <p className='mt-1 text-muted-foreground'>
-                                  {resumeAnalysis.resumeProfile.name}
-                                  {' · '}
-                                  {resumeAnalysis.resumeProfile.targetRoles[0] ?? '待识别岗位'}
-                                  {' · '}
-                                  {resumeAnalysis.interviewQuestions.length}
-                                  {' '}
-                                  道题
-                                </p>
+                              <div className='grid gap-2 text-xs'>
+                                <div className='rounded-lg border border-border/60 bg-background/60 px-3 py-2'>
+                                  <p className='truncate font-medium text-sm'>{interviewRecord.candidateName}</p>
+                                  <p className='mt-1 text-muted-foreground'>
+                                    {interviewRecord.targetRole ?? '待识别岗位'}
+                                  </p>
+                                </div>
+                                <div className='rounded-lg border border-border/60 bg-background/60 px-3 py-2'>
+                                  <p className='text-muted-foreground'>当前轮次</p>
+                                  <p className='mt-1 font-medium text-sm'>{interviewRecord.currentRoundLabel ?? '待安排'}</p>
+                                  <p className='mt-1 text-muted-foreground'>{formatDateTime(interviewRecord.currentRoundTime)}</p>
+                                </div>
+                                <div className='rounded-lg border border-border/60 bg-background/60 px-3 py-2'>
+                                  <p className='text-muted-foreground'>候选人摘要</p>
+                                  <p className='mt-1 text-sm leading-relaxed'>{resumeSummary}</p>
+                                </div>
                               </div>
                             )
-                          : null}
-                      </div>
+                          : (
+                              <div className='rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 text-sm text-destructive'>
+                                当前链接对应的面试记录不可用。
+                              </div>
+                            )}
                     </section>
 
                     <section className='border-border/60 border-b py-3'>
@@ -818,100 +684,15 @@ export default function InterviewPageClient() {
                 )}
           </div>
 
-          <div className='border-border/65 border-t px-2 py-2'>
+          <div className='border-border/65 border-t px-3 py-3'>
             {showExpandedSidebar
-              ? (
-                  <div className='flex items-center gap-2'>
-                    {isSessionPending
-                      ? <div className='h-9 w-full animate-pulse rounded-full bg-muted' />
-                      : session?.user
-                        ? (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  className='w-full justify-start gap-2 rounded-full p-1!'
-                                  type='button'
-                                  variant='ghost'
-                                >
-                                  <Avatar size='default'>
-                                    <AvatarImage alt={userName} src={session.user.image ?? undefined} />
-                                    <AvatarFallback>{userInitials}</AvatarFallback>
-                                  </Avatar>
-                                  <div className='min-w-0 flex-1 text-left'>
-                                    <p className='truncate font-medium text-sm'>{userName}</p>
-                                    <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
-                                  </div>
-                                  <ChevronsUpDownIcon className='size-4 text-muted-foreground' />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align='end' className='w-56'>
-                                <DropdownMenuLabel className='space-y-0.5'>
-                                  <p className='truncate font-medium text-sm'>{userName}</p>
-                                  <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
-                                </DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={handleSignOut} variant='destructive'>
-                                  <LogOutIcon className='mr-2 size-4' />
-                                  退出登录
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )
-                        : <GoogleSignInButton callbackURL='/interview' />}
-                  </div>
-                )
-              : session?.user
-                ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          aria-label='用户菜单'
-                          className='w-full'
-                          size='icon'
-                          type='button'
-                          variant='ghost'
-                        >
-                          <Avatar size='sm'>
-                            <AvatarImage alt={userName} src={session.user.image ?? undefined} />
-                            <AvatarFallback>{userInitials}</AvatarFallback>
-                          </Avatar>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align='end' className='w-56'>
-                        <DropdownMenuLabel className='space-y-0.5'>
-                          <p className='truncate font-medium text-sm'>{userName}</p>
-                          <p className='truncate text-muted-foreground text-xs'>{userEmail}</p>
-                        </DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={handleSignOut} variant='destructive'>
-                          <LogOutIcon className='mr-2 size-4' />
-                          退出登录
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )
-                : (
-                    <Button
-                      aria-label='登录'
-                      className='w-full'
-                      onClick={() => {
-                        authClient.signIn.social({
-                          provider: 'google',
-                          callbackURL: '/interview',
-                        });
-                      }}
-                      size='icon'
-                      type='button'
-                      variant='ghost'
-                    >
-                      <UserIcon className='size-4' />
-                    </Button>
-                  )}
+              ? <p className='text-muted-foreground text-xs leading-relaxed'>本页面已直接加载后台维护的候选人信息，无需重新上传简历。</p>
+              : null}
           </div>
         </aside>
 
         <section className='flex min-h-0 flex-col bg-transparent'>
-          <div className='mx-auto flex h-full w-full max-w-5xl min-w-0 flex-col px-1 pt-4 pb-2 sm:px-2 sm:pt-6 sm:pb-4'>
+          <div className='mx-auto flex h-full w-full max-w-5xl min-w-0 flex-col px-1 pb-2 pt-4 sm:px-2 sm:pb-4 sm:pt-6'>
             <header className='px-1'>
               <div className='mb-2 flex items-center gap-2 sm:hidden'>
                 <Button
@@ -927,11 +708,16 @@ export default function InterviewPageClient() {
                 </Button>
               </div>
 
-              <h1 className='pixel-title text-balance font-bold tracking-tight text-2xl sm:text-3xl'>
-                AI面试
-              </h1>
+              <div className='flex flex-wrap items-center gap-3'>
+                <h1 className='pixel-title text-balance font-bold tracking-tight text-2xl sm:text-3xl'>AI 面试</h1>
+                {interviewRecord ? <Badge variant='secondary'>{interviewRecord.currentRoundLabel ?? '待安排轮次'}</Badge> : null}
+              </div>
               <p className='mt-2 max-w-3xl font-serif! text-xs text-muted-foreground sm:text-sm'>
-                支持语音面试开场、实时记录追问过程，并让面试官持续掌握当前节奏。
+                {interviewRecord
+                  ? `${interviewRecord.candidateName} · ${interviewRecord.targetRole ?? '待识别岗位'} · ${formatDateTime(interviewRecord.currentRoundTime)}`
+                  : isLoadingRecord
+                    ? '系统正在确认当前面试链接对应的候选人信息。'
+                    : '当前链接对应的面试记录不可用。'}
               </p>
             </header>
 
@@ -942,9 +728,9 @@ export default function InterviewPageClient() {
                     ? (
                         <ConversationEmptyState
                           className='my-10 rounded-2xl border border-dashed border-border/70 bg-background/70'
-                          description='点击下方“开始面试”后，这里会依次显示面试官追问与候选人回答。'
-                          icon={<SparklesIcon className='size-5' />}
-                          title='准备开始一轮面试'
+                          description={interviewRecord ? '点击下方“开始面试”后，这里会依次显示面试官追问与候选人回答。' : '当前链接不可用时无法开始面试。'}
+                          icon={isLoadingRecord ? <LoaderCircleIcon className='size-5 animate-spin' /> : <SparklesIcon className='size-5' />}
+                          title={interviewRecord ? '准备开始一轮面试' : isLoadingRecord ? '正在加载面试信息' : '面试链接不可用'}
                         />
                       )
                     : turns.map(turn => (
@@ -978,7 +764,25 @@ export default function InterviewPageClient() {
                 onSubmit={() => undefined}
               >
                 <PromptInputBody>
-                  <div className='px-3 pt-3 pb-2 w-full'>
+                  <div className='w-full px-3 pb-2 pt-3'>
+                    <div className='grid gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm sm:grid-cols-3'>
+                      <div>
+                        <p className='text-muted-foreground text-xs'>候选人</p>
+                        <p className='mt-1 font-medium'>{interviewRecord?.candidateName ?? '加载中'}</p>
+                      </div>
+                      <div>
+                        <p className='text-muted-foreground text-xs'>岗位方向</p>
+                        <p className='mt-1 font-medium'>{interviewRecord?.targetRole ?? '待识别岗位'}</p>
+                      </div>
+                      <div>
+                        <p className='flex items-center gap-1 text-muted-foreground text-xs'>
+                          <CalendarDaysIcon className='size-3.5' />
+                          当前轮次时间
+                        </p>
+                        <p className='mt-1 font-medium'>{formatDateTime(interviewRecord?.currentRoundTime)}</p>
+                      </div>
+                    </div>
+
                     <div className='mt-3 grid gap-3 sm:grid-cols-2'>
                       <LevelBar colorClassName='bg-sky-500' isActive={isConnected} label='候选人音量' value={inputLevel} />
                       <LevelBar colorClassName='bg-amber-500' isActive={isConnected} label='面试官音量' value={outputLevel} />
@@ -987,13 +791,11 @@ export default function InterviewPageClient() {
                 </PromptInputBody>
 
                 <PromptInputFooter className='px-3 pb-3 pt-1'>
-                  <p className='text-muted-foreground text-xs'>
-                    开始后系统会自动监听发言节奏，并把内容同步整理到上方记录区。
-                  </p>
+                  <p className='text-muted-foreground text-xs'>开始后系统会自动监听发言节奏，并把内容同步整理到上方记录区。</p>
 
                   <div className='flex items-center gap-2'>
                     <Button
-                      disabled={isConnected || statusText === 'connecting'}
+                      disabled={!interviewRecord || isConnected || statusText === 'connecting' || isLoadingRecord}
                       onClick={startInterview}
                       type='button'
                     >

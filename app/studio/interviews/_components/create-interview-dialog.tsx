@@ -1,10 +1,11 @@
 'use client';
 
+import type { ResumeAnalysisResult } from '@/lib/interview/types';
 import type { StudioInterviewFormValues, StudioInterviewRecord } from '@/lib/studio-interviews';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { FileUpIcon, LoaderCircleIcon } from 'lucide-react';
+import { FileUpIcon, LoaderCircleIcon, SparklesIcon } from 'lucide-react';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useFieldArray, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,10 +36,19 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  createDefaultScheduleEntry,
   studioInterviewFormSchema,
   studioInterviewStatusMeta,
   studioInterviewStatusValues,
 } from '@/lib/studio-interviews';
+import { InterviewScheduleFields } from './interview-schedule-fields';
+
+function normalizeScheduleEntries(values: StudioInterviewFormValues['scheduleEntries']) {
+  return values.map((entry, index) => ({
+    ...entry,
+    sortOrder: index,
+  }));
+}
 
 export function CreateInterviewDialog({
   onCreated,
@@ -47,29 +57,79 @@ export function CreateInterviewDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
+  const [resumePayload, setResumePayload] = useState<ResumeAnalysisResult | null>(null);
+  const [isAnalyzingResume, setIsAnalyzingResume] = useState(false);
   const form = useForm<StudioInterviewFormValues>({
     resolver: zodResolver(studioInterviewFormSchema),
     defaultValues: {
+      candidateName: '',
       candidateEmail: '',
+      targetRole: '',
       notes: '',
       status: 'ready',
+      scheduleEntries: [createDefaultScheduleEntry()],
     },
   });
+  const scheduleEntries = useFieldArray({
+    control: form.control,
+    name: 'scheduleEntries',
+  });
 
-  async function onSubmit(values: StudioInterviewFormValues) {
-    if (!resumeFile) {
-      setFileError('请上传 PDF 简历');
+  async function handleResumeChange(file: File | null) {
+    setResumeFile(file);
+    setResumePayload(null);
+
+    if (!file) {
       return;
     }
 
-    setFileError(null);
+    setIsAnalyzingResume(true);
 
+    try {
+      const formData = new FormData();
+      formData.append('resume', file);
+
+      const response = await fetch('/api/interview/parse-resume', {
+        method: 'POST',
+        body: formData,
+      });
+      const payload = (await response.json().catch(() => null)) as (ResumeAnalysisResult & { error?: string }) | null;
+
+      if (!response.ok || !payload?.resumeProfile || !payload?.interviewQuestions || !payload.fileName) {
+        throw new Error(payload?.error ?? '简历分析失败');
+      }
+
+      setResumePayload(payload);
+      form.setValue('candidateName', payload.resumeProfile.name, { shouldDirty: true, shouldValidate: true });
+      form.setValue('targetRole', payload.resumeProfile.targetRoles[0] ?? '', { shouldDirty: true, shouldValidate: true });
+      toast.success('简历分析完成，已回填候选人信息');
+    }
+    catch (error) {
+      setResumeFile(null);
+      setResumePayload(null);
+      toast.error(error instanceof Error ? error.message : '简历分析失败');
+    }
+    finally {
+      setIsAnalyzingResume(false);
+    }
+  }
+
+  async function onSubmit(values: StudioInterviewFormValues) {
     const formData = new FormData();
-    formData.append('resume', resumeFile);
+    formData.append('candidateName', values.candidateName);
     formData.append('candidateEmail', values.candidateEmail);
+    formData.append('targetRole', values.targetRole);
     formData.append('notes', values.notes);
     formData.append('status', values.status);
+    formData.append('scheduleEntries', JSON.stringify(normalizeScheduleEntries(values.scheduleEntries)));
+
+    if (resumeFile) {
+      formData.append('resume', resumeFile);
+    }
+
+    if (resumePayload) {
+      formData.append('resumePayload', JSON.stringify(resumePayload));
+    }
 
     const response = await fetch('/api/studio/interviews', {
       method: 'POST',
@@ -86,8 +146,16 @@ export function CreateInterviewDialog({
     onCreated(payload as StudioInterviewRecord);
     setOpen(false);
     setResumeFile(null);
-    form.reset();
-    toast.success('已创建 AI 面试记录');
+    setResumePayload(null);
+    form.reset({
+      candidateName: '',
+      candidateEmail: '',
+      targetRole: '',
+      notes: '',
+      status: 'ready',
+      scheduleEntries: [createDefaultScheduleEntry()],
+    });
+    toast.success('简历库记录已创建');
   }
 
   return (
@@ -95,13 +163,13 @@ export function CreateInterviewDialog({
       <DialogTrigger asChild>
         <Button>
           <FileUpIcon className='size-4' />
-          新建 AI 面试
+          新建简历记录
         </Button>
       </DialogTrigger>
-      <DialogContent className='max-w-2xl'>
+      <DialogContent className='max-h-[90vh] max-w-4xl overflow-y-auto'>
         <DialogHeader>
-          <DialogTitle>新建 AI 面试</DialogTitle>
-          <DialogDescription>上传候选人简历后，系统会自动解析信息并生成 10 道面试题。</DialogDescription>
+          <DialogTitle>新建简历记录</DialogTitle>
+          <DialogDescription>支持手动录入候选人资料，也可以先上传 PDF 简历自动分析并回填表单。</DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
@@ -111,20 +179,49 @@ export function CreateInterviewDialog({
                 <FormLabel>简历 PDF</FormLabel>
                 <Input
                   accept='application/pdf'
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    setResumeFile(file);
-                    setFileError(null);
-                  }}
+                  disabled={isAnalyzingResume || form.formState.isSubmitting}
+                  onChange={event => void handleResumeChange(event.target.files?.[0] ?? null)}
                   type='file'
                 />
-                <p className='text-muted-foreground text-sm'>只支持 PDF，上传后会调用现有简历分析能力自动生成用户画像。</p>
+                <p className='text-muted-foreground text-sm'>选填。上传后会调用现有简历分析接口，自动回填候选人姓名、岗位和题目数据。</p>
                 {resumeFile ? <p className='text-sm'>{resumeFile.name}</p> : null}
-                {fileError ? <p className='text-destructive text-sm'>{fileError}</p> : null}
+                {resumePayload
+                  ? (
+                      <div className='rounded-xl border border-border/60 bg-background/80 px-3 py-2 text-sm'>
+                        <p className='flex items-center gap-2 font-medium'>
+                          <SparklesIcon className='size-4 text-amber-500' />
+                          已完成简历分析
+                        </p>
+                        <p className='mt-1 text-muted-foreground'>
+                          {resumePayload.resumeProfile.name}
+                          {' · '}
+                          {resumePayload.resumeProfile.targetRoles[0] ?? '待识别岗位'}
+                          {' · '}
+                          {resumePayload.interviewQuestions.length}
+                          {' '}
+                          道题
+                        </p>
+                      </div>
+                    )
+                  : null}
               </div>
             </div>
 
             <div className='grid gap-4 md:grid-cols-2'>
+              <FormField
+                control={form.control}
+                name='candidateName'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>候选人姓名</FormLabel>
+                    <FormControl>
+                      <Input placeholder='请输入候选人姓名' {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
               <FormField
                 control={form.control}
                 name='candidateEmail'
@@ -142,10 +239,24 @@ export function CreateInterviewDialog({
 
               <FormField
                 control={form.control}
+                name='targetRole'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>目标岗位</FormLabel>
+                    <FormControl>
+                      <Input placeholder='如：前端工程师 / 产品经理' {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name='status'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>初始状态</FormLabel>
+                    <FormLabel>当前流程</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -166,12 +277,19 @@ export function CreateInterviewDialog({
               />
             </div>
 
+            <InterviewScheduleFields
+              append={scheduleEntries.append}
+              fields={scheduleEntries.fields}
+              form={form as any}
+              remove={scheduleEntries.remove}
+            />
+
             <FormField
               control={form.control}
               name='notes'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>备注</FormLabel>
+                  <FormLabel>内部备注</FormLabel>
                   <FormControl>
                     <Textarea className='min-h-28' placeholder='记录候选人来源、业务线、面试关注点等信息' {...field} />
                   </FormControl>
@@ -181,9 +299,9 @@ export function CreateInterviewDialog({
             />
 
             <DialogFooter>
-              <Button disabled={form.formState.isSubmitting} type='submit'>
-                {form.formState.isSubmitting ? <LoaderCircleIcon className='size-4 animate-spin' /> : null}
-                创建并分析简历
+              <Button disabled={form.formState.isSubmitting || isAnalyzingResume} type='submit'>
+                {form.formState.isSubmitting || isAnalyzingResume ? <LoaderCircleIcon className='size-4 animate-spin' /> : null}
+                保存简历记录
               </Button>
             </DialogFooter>
           </form>

@@ -1,17 +1,82 @@
-import { and, desc, eq, ilike, or } from 'drizzle-orm';
+import type { StudioInterviewRecord } from '@/lib/studio-interviews';
+import { and, desc, eq, ilike, inArray, or } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { studioInterview } from '@/lib/db/schema';
-import { studioInterviewFormSchema, studioInterviewUpdateSchema } from '@/lib/studio-interviews';
+import { studioInterview, studioInterviewSchedule } from '@/lib/db/schema';
+import { buildInterviewLink, sortScheduleEntries } from '@/lib/interview/interview-record';
+import {
+  parseResumePayloadInput,
+  parseScheduleEntriesInput,
+  studioInterviewFormSchema,
+
+  studioInterviewUpdateSchema,
+  toNullableString,
+} from '@/lib/studio-interviews';
 import { factory } from '@/server/factory';
 import { analyzeResumeFile, ResumeAnalysisError } from '../interview/analysis';
 
-function toNullableString(value: FormDataEntryValue | null) {
-  if (typeof value !== 'string') {
+type StudioInterviewRow = typeof studioInterview.$inferSelect;
+type StudioInterviewScheduleRow = typeof studioInterviewSchedule.$inferSelect;
+
+function normalizeResumeFile(value: FormDataEntryValue | null) {
+  return value instanceof File && value.size > 0 ? value : null;
+}
+
+function buildScheduleRows(interviewRecordId: string, entries: ReturnType<typeof parseScheduleEntriesInput>, now: Date) {
+  return entries.map((entry, index) => ({
+    id: entry.id?.trim() || crypto.randomUUID(),
+    interviewRecordId,
+    roundLabel: entry.roundLabel.trim(),
+    scheduledAt: entry.scheduledAt ? new Date(entry.scheduledAt) : null,
+    notes: entry.notes?.trim() || null,
+    sortOrder: typeof entry.sortOrder === 'number' ? entry.sortOrder : index,
+    createdAt: now,
+    updatedAt: now,
+  }));
+}
+
+async function loadScheduleEntries(interviewIds: string[]) {
+  if (interviewIds.length === 0) {
+    return [] as StudioInterviewScheduleRow[];
+  }
+
+  return db.select().from(studioInterviewSchedule).where(inArray(studioInterviewSchedule.interviewRecordId, interviewIds));
+}
+
+function serializeRecord(record: StudioInterviewRow, scheduleRows: StudioInterviewScheduleRow[]): StudioInterviewRecord {
+  const scheduleEntries = sortScheduleEntries(
+    scheduleRows.filter(schedule => schedule.interviewRecordId === record.id),
+  );
+
+  return {
+    ...record,
+    interviewQuestions: record.interviewQuestions ?? [],
+    scheduleEntries,
+    interviewLink: buildInterviewLink(record.id),
+  };
+}
+
+async function loadRecordById(id: string) {
+  const [record] = await db.select().from(studioInterview).where(eq(studioInterview.id, id)).limit(1);
+
+  if (!record) {
     return null;
   }
 
-  const normalized = value.trim();
-  return normalized || null;
+  const scheduleEntries = await loadScheduleEntries([record.id]);
+  return serializeRecord(record, scheduleEntries);
+}
+
+function toBadRequest(error: unknown) {
+  if (error instanceof ResumeAnalysisError) {
+    return { error: error.message, stage: error.stage, status: 500 };
+  }
+
+  if (error instanceof Error) {
+    const status = error.message.includes('PDF') || error.message.includes('10 MB') ? 400 : 400;
+    return { error: error.message, status };
+  }
+
+  return { error: '表单校验失败。', status: 400 };
 }
 
 export const studioInterviewsRouter = factory.createApp()
@@ -23,6 +88,7 @@ export const studioInterviewsRouter = factory.createApp()
       search
         ? or(
             ilike(studioInterview.candidateName, `%${search}%`),
+            ilike(studioInterview.candidateEmail, `%${search}%`),
             ilike(studioInterview.resumeFileName, `%${search}%`),
             ilike(studioInterview.targetRole, `%${search}%`),
           )
@@ -36,64 +102,64 @@ export const studioInterviewsRouter = factory.createApp()
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(studioInterview.createdAt));
 
-    return c.json(records);
+    const scheduleEntries = await loadScheduleEntries(records.map(record => record.id));
+
+    return c.json(records.map(record => serializeRecord(record, scheduleEntries)));
   })
   .post('/', async (c) => {
-    const formData = await c.req.formData();
-    const resume = formData.get('resume');
-
-    if (!(resume instanceof File)) {
-      return c.json({ error: '缺少简历 PDF 文件。' }, 400);
-    }
-
-    const input = studioInterviewFormSchema.safeParse({
-      candidateEmail: toNullableString(formData.get('candidateEmail')) ?? '',
-      notes: toNullableString(formData.get('notes')) ?? '',
-      status: toNullableString(formData.get('status')) ?? 'ready',
-    });
-
-    if (!input.success) {
-      return c.json({ error: input.error.issues[0]?.message ?? '表单校验失败。' }, 400);
-    }
-
     try {
-      const analysis = await analyzeResumeFile(resume);
+      const formData = await c.req.formData();
+      const resume = normalizeResumeFile(formData.get('resume'));
+      const parsedScheduleEntries = parseScheduleEntriesInput(formData.get('scheduleEntries'));
+      const parsedResumePayload = parseResumePayloadInput(formData.get('resumePayload'));
+
+      const input = studioInterviewFormSchema.safeParse({
+        candidateName: toNullableString(formData.get('candidateName')) ?? '',
+        candidateEmail: toNullableString(formData.get('candidateEmail')) ?? '',
+        targetRole: toNullableString(formData.get('targetRole')) ?? '',
+        notes: toNullableString(formData.get('notes')) ?? '',
+        status: toNullableString(formData.get('status')) ?? 'ready',
+        scheduleEntries: parsedScheduleEntries,
+      });
+
+      if (!input.success) {
+        return c.json({ error: input.error.issues[0]?.message ?? '表单校验失败。' }, 400);
+      }
+
+      const analysis = parsedResumePayload ?? (resume ? await analyzeResumeFile(resume) : null);
       const now = new Date();
+      const interviewRecordId = crypto.randomUUID();
       const record = {
-        id: crypto.randomUUID(),
-        candidateName: analysis.resumeProfile.name,
+        id: interviewRecordId,
+        candidateName: input.data.candidateName || analysis?.resumeProfile.name || '未命名候选人',
         candidateEmail: input.data.candidateEmail || null,
-        targetRole: analysis.resumeProfile.targetRoles[0] ?? null,
+        targetRole: input.data.targetRole || analysis?.resumeProfile.targetRoles[0] || null,
         status: input.data.status,
-        resumeFileName: analysis.fileName,
-        resumeProfile: analysis.resumeProfile,
-        interviewQuestions: analysis.interviewQuestions,
+        resumeFileName: analysis?.fileName ?? null,
+        resumeProfile: analysis?.resumeProfile ?? null,
+        interviewQuestions: analysis?.interviewQuestions ?? [],
         notes: input.data.notes || null,
         createdBy: c.var.user?.id ?? null,
         createdAt: now,
         updatedAt: now,
-      };
+      } satisfies typeof studioInterview.$inferInsert;
+      const scheduleRows = buildScheduleRows(interviewRecordId, input.data.scheduleEntries, now);
 
-      await db.insert(studioInterview).values(record);
+      await db.transaction(async (tx) => {
+        await tx.insert(studioInterview).values(record);
+        await tx.insert(studioInterviewSchedule).values(scheduleRows);
+      });
 
-      return c.json(record, 201);
+      return c.json(serializeRecord(record, scheduleRows), 201);
     }
     catch (error) {
-      if (error instanceof ResumeAnalysisError) {
-        return c.json({ error: error.message, stage: error.stage }, 500);
-      }
-
-      if (error instanceof Error) {
-        const statusCode = error.message.includes('PDF') || error.message.includes('10 MB') ? 400 : 500;
-        return c.json({ error: error.message }, statusCode);
-      }
-
-      return c.json({ error: '创建面试记录失败。' }, 500);
+      const result = toBadRequest(error);
+      return c.json({ error: result.error }, { status: result.status as any });
     }
   })
   .get('/:id', async (c) => {
     const id = c.req.param('id');
-    const [record] = await db.select().from(studioInterview).where(eq(studioInterview.id, id)).limit(1);
+    const record = await loadRecordById(id);
 
     if (!record) {
       return c.json({ error: '记录不存在。' }, 404);
@@ -103,35 +169,64 @@ export const studioInterviewsRouter = factory.createApp()
   })
   .patch('/:id', async (c) => {
     const id = c.req.param('id');
-    const body = await c.req.json().catch(() => null);
-    const input = studioInterviewUpdateSchema.safeParse(body);
 
-    if (!input.success) {
-      return c.json({ error: input.error.issues[0]?.message ?? '表单校验失败。' }, 400);
-    }
+    try {
+      const existing = await loadRecordById(id);
 
-    const [existing] = await db.select().from(studioInterview).where(eq(studioInterview.id, id)).limit(1);
+      if (!existing) {
+        return c.json({ error: '记录不存在。' }, 404);
+      }
 
-    if (!existing) {
-      return c.json({ error: '记录不存在。' }, 404);
-    }
+      const formData = await c.req.formData();
+      const resume = normalizeResumeFile(formData.get('resume'));
+      const parsedScheduleEntries = parseScheduleEntriesInput(formData.get('scheduleEntries'));
+      const parsedResumePayload = parseResumePayloadInput(formData.get('resumePayload'));
 
-    const [updated] = await db
-      .update(studioInterview)
-      .set({
+      const input = studioInterviewUpdateSchema.safeParse({
+        candidateName: toNullableString(formData.get('candidateName')) ?? '',
+        candidateEmail: toNullableString(formData.get('candidateEmail')) ?? '',
+        targetRole: toNullableString(formData.get('targetRole')) ?? '',
+        notes: toNullableString(formData.get('notes')) ?? '',
+        status: toNullableString(formData.get('status')) ?? existing.status,
+        scheduleEntries: parsedScheduleEntries,
+      });
+
+      if (!input.success) {
+        return c.json({ error: input.error.issues[0]?.message ?? '表单校验失败。' }, 400);
+      }
+
+      const analysis = parsedResumePayload ?? (resume ? await analyzeResumeFile(resume) : null);
+      const now = new Date();
+      const nextRecord = {
+        candidateName: input.data.candidateName || analysis?.resumeProfile.name || existing.candidateName,
         candidateEmail: input.data.candidateEmail || null,
-        notes: input.data.notes || null,
+        targetRole: input.data.targetRole || analysis?.resumeProfile.targetRoles[0] || null,
         status: input.data.status,
-        updatedAt: new Date(),
-      })
-      .where(eq(studioInterview.id, id))
-      .returning();
+        resumeFileName: analysis?.fileName ?? existing.resumeFileName,
+        resumeProfile: analysis?.resumeProfile ?? existing.resumeProfile,
+        interviewQuestions: analysis?.interviewQuestions ?? existing.interviewQuestions,
+        notes: input.data.notes || null,
+        updatedAt: now,
+      } satisfies Partial<typeof studioInterview.$inferInsert>;
+      const scheduleRows = buildScheduleRows(id, input.data.scheduleEntries, now);
 
-    return c.json(updated);
+      await db.transaction(async (tx) => {
+        await tx.update(studioInterview).set(nextRecord).where(eq(studioInterview.id, id));
+        await tx.delete(studioInterviewSchedule).where(eq(studioInterviewSchedule.interviewRecordId, id));
+        await tx.insert(studioInterviewSchedule).values(scheduleRows);
+      });
+
+      const updatedRecord = await loadRecordById(id);
+      return c.json(updatedRecord);
+    }
+    catch (error) {
+      const result = toBadRequest(error);
+      return c.json({ error: result.error }, { status: result.status as any });
+    }
   })
   .delete('/:id', async (c) => {
     const id = c.req.param('id');
-    const [existing] = await db.select().from(studioInterview).where(eq(studioInterview.id, id)).limit(1);
+    const existing = await loadRecordById(id);
 
     if (!existing) {
       return c.json({ error: '记录不存在。' }, 404);

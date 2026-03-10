@@ -24,5 +24,12 @@ export const relations = defineRelations(schema, r => ({
       from: r.studioInterview.createdBy,
       to: r.user.id,
     }),
+    scheduleEntries: r.many.studioInterviewSchedule(),
+  },
+  studioInterviewSchedule: {
+    interviewRecord: r.one.studioInterview({
+      from: r.studioInterviewSchedule.interviewRecordId,
+      to: r.studioInterview.id,
+    }),
   },
 }));
