@@ -78,6 +78,28 @@ export interface StudioInterviewRecord {
   updatedAt: string | Date
 }
 
+export type StudioInterviewListRecord = Omit<StudioInterviewRecord, 'resumeProfile' | 'interviewQuestions'> & {
+  questionCount: number
+};
+
+export function toStudioInterviewListRecord(record: StudioInterviewRecord): StudioInterviewListRecord {
+  return {
+    id: record.id,
+    candidateName: record.candidateName,
+    candidateEmail: record.candidateEmail,
+    targetRole: record.targetRole,
+    status: record.status,
+    resumeFileName: record.resumeFileName,
+    scheduleEntries: record.scheduleEntries,
+    interviewLink: record.interviewLink,
+    notes: record.notes,
+    createdBy: record.createdBy,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    questionCount: record.interviewQuestions.length,
+  };
+}
+
 export const studioInterviewStatusMeta: Record<StudioInterviewStatus, { label: string, tone: 'default' | 'secondary' | 'outline' }> = {
   draft: { label: '草稿', tone: 'outline' },
   ready: { label: '待面试', tone: 'default' },

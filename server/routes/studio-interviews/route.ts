@@ -1,5 +1,5 @@
 import type { StudioInterviewRecord } from '@/lib/studio-interviews';
-import { and, desc, eq, ilike, inArray, or } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { studioInterview, studioInterviewSchedule } from '@/lib/db/schema';
 import { buildInterviewLink, sortScheduleEntries } from '@/lib/interview/interview-record';
@@ -7,11 +7,11 @@ import {
   parseResumePayloadInput,
   parseScheduleEntriesInput,
   studioInterviewFormSchema,
-
   studioInterviewUpdateSchema,
   toNullableString,
 } from '@/lib/studio-interviews';
 import { factory } from '@/server/factory';
+import { listStudioInterviewRecords } from '@/server/queries/studio-interviews';
 import { analyzeResumeFile, ResumeAnalysisError } from '../interview/analysis';
 
 type StudioInterviewRow = typeof studioInterview.$inferSelect;
@@ -81,30 +81,12 @@ function toBadRequest(error: unknown) {
 
 export const studioInterviewsRouter = factory.createApp()
   .get('/', async (c) => {
-    const search = c.req.query('search')?.trim();
-    const status = c.req.query('status')?.trim();
+    const records = await listStudioInterviewRecords({
+      search: c.req.query('search'),
+      status: c.req.query('status'),
+    });
 
-    const conditions = [
-      search
-        ? or(
-            ilike(studioInterview.candidateName, `%${search}%`),
-            ilike(studioInterview.candidateEmail, `%${search}%`),
-            ilike(studioInterview.resumeFileName, `%${search}%`),
-            ilike(studioInterview.targetRole, `%${search}%`),
-          )
-        : undefined,
-      status ? eq(studioInterview.status, status as any) : undefined,
-    ].filter(Boolean);
-
-    const records = await db
-      .select()
-      .from(studioInterview)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(studioInterview.createdAt));
-
-    const scheduleEntries = await loadScheduleEntries(records.map(record => record.id));
-
-    return c.json(records.map(record => serializeRecord(record, scheduleEntries)));
+    return c.json(records);
   })
   .post('/', async (c) => {
     try {

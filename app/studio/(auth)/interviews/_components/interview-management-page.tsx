@@ -1,14 +1,11 @@
 'use client';
 
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
-import type { StudioInterviewRecord } from '@/lib/studio-interviews';
+import type { StudioInterviewListRecord } from '@/lib/studio-interviews';
 import {
-
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
   getSortedRowModel,
-
   useReactTable,
 } from '@tanstack/react-table';
 import {
@@ -16,12 +13,13 @@ import {
   BotIcon,
   CopyIcon,
   EyeIcon,
+  Loader2Icon,
   MoreHorizontalIcon,
   PencilIcon,
   SearchIcon,
   Trash2Icon,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -87,16 +85,112 @@ function formatDateTime(value: string | Date) {
   }).format(new Date(value));
 }
 
-export function InterviewManagementPage({ initialRecords }: { initialRecords: StudioInterviewRecord[] }) {
-  const [records, setRecords] = useState(initialRecords);
+export function InterviewManagementPage({ initialRecords }: { initialRecords: StudioInterviewListRecord[] }) {
+  const [records, replaceRecords] = useReducer((_previous: StudioInterviewListRecord[], nextRecords: StudioInterviewListRecord[]) => nextRecords, initialRecords);
   const [sorting, setSorting] = useState<SortingState>([{ id: 'createdAt', desc: true }]);
   const [globalFilter, setGlobalFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | (typeof studioInterviewStatusValues)[number]>('all');
-  const [detailRecord, setDetailRecord] = useState<StudioInterviewRecord | null>(null);
-  const [editRecord, setEditRecord] = useState<StudioInterviewRecord | null>(null);
-  const [deleteRecord, setDeleteRecord] = useState<StudioInterviewRecord | null>(null);
+  const [requestState, setRequestState] = useState<'idle' | 'filter' | 'mutation'>('idle');
+  const [detailRecordId, setDetailRecordId] = useState<string | null>(null);
+  const [editRecordId, setEditRecordId] = useState<string | null>(null);
+  const [deleteRecord, setDeleteRecord] = useState<StudioInterviewListRecord | null>(null);
+  const deferredSearch = useDeferredValue(globalFilter);
+  const hasSkippedInitialFetchRef = useRef(false);
+  const activeRequestRef = useRef<{ id: number, controller: AbortController } | null>(null);
+  const requestSequenceRef = useRef(0);
+  const isFilterLoading = requestState === 'filter';
+  const isMutationRefreshing = requestState === 'mutation';
 
-  async function copyInterviewLink(record: StudioInterviewRecord) {
+  const reloadRecords = useCallback(async ({
+    search,
+    status,
+    source,
+  }: {
+    search: string
+    status: 'all' | (typeof studioInterviewStatusValues)[number]
+    source: 'filter' | 'mutation'
+  }) => {
+    activeRequestRef.current?.controller.abort();
+
+    const controller = new AbortController();
+    const requestId = requestSequenceRef.current + 1;
+    activeRequestRef.current = { id: requestId, controller };
+    requestSequenceRef.current = requestId;
+    setRequestState(source);
+
+    function isCurrentRequest() {
+      return activeRequestRef.current?.id === requestId;
+    }
+
+    try {
+      const params = new URLSearchParams();
+
+      if (search) {
+        params.set('search', search);
+      }
+
+      if (status !== 'all') {
+        params.set('status', status);
+      }
+
+      const query = params.toString();
+      const response = await fetch(query ? `/api/studio/interviews?${query}` : '/api/studio/interviews', {
+        signal: controller.signal,
+      });
+      const payload = (await response.json().catch(() => null)) as StudioInterviewListRecord[] | { error?: string } | null;
+
+      if (!response.ok || !payload || !Array.isArray(payload)) {
+        throw new Error(payload && !Array.isArray(payload) ? payload.error ?? '加载列表失败' : '加载列表失败');
+      }
+
+      if (!isCurrentRequest()) {
+        return;
+      }
+
+      startTransition(() => {
+        replaceRecords(payload);
+      });
+    }
+    catch (error) {
+      if (controller.signal.aborted || !isCurrentRequest()) {
+        return;
+      }
+
+      toast.error(error instanceof Error ? error.message : '加载列表失败');
+    }
+    finally {
+      if (isCurrentRequest()) {
+        activeRequestRef.current = null;
+        setRequestState('idle');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const search = deferredSearch.trim();
+
+    if (!hasSkippedInitialFetchRef.current) {
+      hasSkippedInitialFetchRef.current = true;
+
+      if (!search && statusFilter === 'all') {
+        return;
+      }
+    }
+
+    void reloadRecords({
+      search,
+      status: statusFilter,
+      source: 'filter',
+    });
+  }, [deferredSearch, reloadRecords, statusFilter]);
+
+  useEffect(() => {
+    return () => {
+      activeRequestRef.current?.controller.abort();
+    };
+  }, []);
+
+  async function copyInterviewLink(record: StudioInterviewListRecord) {
     try {
       await navigator.clipboard.writeText(new URL(record.interviewLink, window.location.origin).toString());
       toast.success('面试链接已复制');
@@ -106,7 +200,19 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
     }
   }
 
-  const columns = useMemo<ColumnDef<StudioInterviewRecord>[]>(() => [
+  function openDetail(recordId: string) {
+    requestAnimationFrame(() => {
+      setDetailRecordId(recordId);
+    });
+  }
+
+  function openEdit(recordId: string) {
+    requestAnimationFrame(() => {
+      setEditRecordId(recordId);
+    });
+  }
+
+  const columns = useMemo<ColumnDef<StudioInterviewListRecord>[]>(() => [
     {
       accessorKey: 'candidateName',
       header: ({ column }) => (
@@ -142,13 +248,6 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
       accessorKey: 'status',
       header: '状态',
       cell: ({ row }) => <InterviewStatusBadge status={row.original.status} />,
-      filterFn: (row, id, value) => {
-        if (!value || value === 'all') {
-          return true;
-        }
-
-        return row.getValue(id) === value;
-      },
     },
     {
       id: 'currentRound',
@@ -173,7 +272,7 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
     {
       id: 'questionCount',
       header: '题目数',
-      cell: ({ row }) => `${row.original.interviewQuestions.length} 题`,
+      cell: ({ row }) => `${row.original.questionCount} 题`,
     },
     {
       accessorKey: 'createdAt',
@@ -192,7 +291,7 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
         const record = row.original;
 
         return (
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button className='size-8 p-0' variant='ghost'>
                 <MoreHorizontalIcon className='size-4' />
@@ -202,19 +301,19 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
             <DropdownMenuContent align='end' className='w-44'>
               <DropdownMenuLabel>操作</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => void copyInterviewLink(record)}>
+              <DropdownMenuItem onSelect={() => void copyInterviewLink(record)}>
                 <CopyIcon className='size-4' />
                 复制面试链接
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setDetailRecord(record)}>
+              <DropdownMenuItem onSelect={() => openDetail(record.id)}>
                 <EyeIcon className='size-4' />
                 查看详情
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setEditRecord(record)}>
+              <DropdownMenuItem onSelect={() => openEdit(record.id)}>
                 <PencilIcon className='size-4' />
                 编辑记录
               </DropdownMenuItem>
-              <DropdownMenuItem className='text-destructive focus:text-destructive' onClick={() => setDeleteRecord(record)}>
+              <DropdownMenuItem className='text-destructive focus:text-destructive' onSelect={() => setDeleteRecord(record)}>
                 <Trash2Icon className='size-4' />
                 删除
               </DropdownMenuItem>
@@ -230,34 +329,10 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
     columns,
     state: {
       sorting,
-      globalFilter,
-      columnFilters: [
-        {
-          id: 'status',
-          value: statusFilter,
-        },
-      ],
     },
     onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    globalFilterFn: (row, _columnId, filterValue) => {
-      const search = String(filterValue).trim().toLowerCase();
-
-      if (!search) {
-        return true;
-      }
-
-      return [
-        row.original.candidateName,
-        row.original.candidateEmail,
-        row.original.targetRole,
-        row.original.resumeFileName,
-        ...row.original.scheduleEntries.map(item => item.roundLabel),
-      ].some(value => value?.toLowerCase().includes(search));
-    },
   });
 
   const summary = useMemo(() => ({
@@ -283,8 +358,12 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
       return;
     }
 
-    setRecords(previous => previous.filter(item => item.id !== deleteRecord.id));
     setDeleteRecord(null);
+    await reloadRecords({
+      search: deferredSearch.trim(),
+      status: statusFilter,
+      source: 'mutation',
+    });
     toast.success('面试记录已删除');
   }
 
@@ -300,7 +379,14 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
                 管理候选人简历、面试流程与多轮时间安排，并为每位候选人生成唯一的面试入口链接。
               </p>
             </div>
-            <CreateInterviewDialog onCreated={record => setRecords(previous => [record, ...previous])} />
+            <CreateInterviewDialog onCreated={async () => {
+              await reloadRecords({
+                search: deferredSearch.trim(),
+                status: statusFilter,
+                source: 'mutation',
+              });
+            }}
+            />
           </div>
         </section>
 
@@ -326,12 +412,21 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
           <CardHeader className='gap-4 lg:flex-row lg:items-end lg:justify-between'>
             <div>
               <CardTitle>简历库记录</CardTitle>
-              <CardDescription>支持搜索、状态筛选、复制链接、查看详情、编辑和删除。</CardDescription>
+              <CardDescription>
+                {isFilterLoading
+                  ? '正在搜索并更新结果...'
+                  : isMutationRefreshing
+                    ? '正在刷新列表结果...'
+                    : '支持搜索、状态筛选、复制链接、查看详情、编辑和删除。'}
+              </CardDescription>
             </div>
             <div className='flex flex-col gap-3 sm:flex-row'>
               <div className='relative min-w-[240px]'>
                 <SearchIcon className='pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground' />
-                <Input className='pl-9' onChange={event => setGlobalFilter(event.target.value)} placeholder='搜索候选人、岗位、轮次或简历名' value={globalFilter} />
+                <Input className='pr-9 pl-9' onChange={event => setGlobalFilter(event.target.value)} placeholder='搜索候选人、岗位、轮次或简历名' value={globalFilter} />
+                {isFilterLoading
+                  ? <Loader2Icon className='pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin text-muted-foreground' />
+                  : null}
               </div>
               <Select onValueChange={value => setStatusFilter(value as typeof statusFilter)} value={statusFilter}>
                 <SelectTrigger className='min-w-[180px]'>
@@ -390,7 +485,14 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
                       </EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent>
-                      <CreateInterviewDialog onCreated={record => setRecords(previous => [record, ...previous])} />
+                      <CreateInterviewDialog onCreated={async () => {
+                        await reloadRecords({
+                          search: deferredSearch.trim(),
+                          status: statusFilter,
+                          source: 'mutation',
+                        });
+                      }}
+                      />
                     </EmptyContent>
                   </Empty>
                 )}
@@ -398,13 +500,19 @@ export function InterviewManagementPage({ initialRecords }: { initialRecords: St
         </Card>
       </div>
 
-      <InterviewDetailDialog onOpenChange={open => !open && setDetailRecord(null)} open={detailRecord !== null} record={detailRecord} />
+      <InterviewDetailDialog onOpenChange={open => !open && setDetailRecordId(null)} open={detailRecordId !== null} recordId={detailRecordId} />
 
       <EditInterviewDialog
-        onOpenChange={open => !open && setEditRecord(null)}
-        onUpdated={updated => setRecords(previous => previous.map(item => item.id === updated.id ? updated : item))}
-        open={editRecord !== null}
-        record={editRecord}
+        onOpenChange={open => !open && setEditRecordId(null)}
+        onUpdated={async () => {
+          await reloadRecords({
+            search: deferredSearch.trim(),
+            status: statusFilter,
+            source: 'mutation',
+          });
+        }}
+        open={editRecordId !== null}
+        recordId={editRecordId}
       />
 
       <AlertDialog onOpenChange={open => !open && setDeleteRecord(null)} open={deleteRecord !== null}>
