@@ -11,6 +11,7 @@ import {
   toNullableString,
 } from '@/lib/studio-interviews';
 import { factory } from '@/server/factory';
+import { listInterviewConversationReports } from '@/server/queries/interview-conversations';
 import { listStudioInterviewRecords } from '@/server/queries/studio-interviews';
 import { analyzeResumeFile, ResumeAnalysisError } from '../interview/analysis';
 
@@ -148,6 +149,17 @@ export const studioInterviewsRouter = factory.createApp()
     }
 
     return c.json(record);
+  })
+  .get('/:id/reports', async (c) => {
+    const id = c.req.param('id');
+    const existing = await loadRecordById(id);
+
+    if (!existing) {
+      return c.json({ error: '记录不存在。' }, 404);
+    }
+
+    const reports = await listInterviewConversationReports(id);
+    return c.json(reports);
   })
   .patch('/:id', async (c) => {
     const id = c.req.param('id');

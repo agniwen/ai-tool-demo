@@ -1,6 +1,7 @@
 'use client';
 
 import type { Conversation as ElevenConversationType } from '@elevenlabs/client';
+import type { InterviewConversationSnapshot } from '@/lib/interview-session';
 import type { CandidateInterviewView } from '@/lib/interview/interview-record';
 import { Conversation as VoiceConversation } from '@elevenlabs/client';
 import {
@@ -41,6 +42,8 @@ interface Turn {
   role: 'agent' | 'user'
   text: string
   createdAt: number
+  source: string
+  timeInCallSecs?: number
 }
 
 interface AudioDeviceOption {
@@ -180,6 +183,17 @@ function buildInterviewQuestionsVariable(interviewRecord: CandidateInterviewView
     .join('\n');
 }
 
+function toClientTurn(turn: InterviewConversationSnapshot['turns'][number]): Turn {
+  return {
+    id: turn.id,
+    role: turn.role,
+    text: turn.message,
+    createdAt: new Date(turn.createdAt).getTime(),
+    source: turn.source,
+    ...(typeof turn.timeInCallSecs === 'number' ? { timeInCallSecs: turn.timeInCallSecs } : {}),
+  };
+}
+
 function pickMessage(event: unknown): Omit<Turn, 'id' | 'createdAt'> | null {
   if (!event || typeof event !== 'object') {
     return null;
@@ -190,6 +204,7 @@ function pickMessage(event: unknown): Omit<Turn, 'id' | 'createdAt'> | null {
   if (typeof value.source === 'string' && typeof value.message === 'string') {
     return {
       role: value.source === 'user' ? 'user' : 'agent',
+      source: 'conversation_message',
       text: value.message,
     };
   }
@@ -200,7 +215,16 @@ function pickMessage(event: unknown): Omit<Turn, 'id' | 'createdAt'> | null {
     if (typeof transcript === 'string' && transcript.trim()) {
       return {
         role: 'user',
+        source: 'user_transcript',
         text: transcript,
+        ...(typeof value.user_transcription_event === 'object' && value.user_transcription_event
+          ? {
+              timeInCallSecs:
+                typeof (value.user_transcription_event as { time_in_call_secs?: unknown }).time_in_call_secs === 'number'
+                  ? (value.user_transcription_event as { time_in_call_secs: number }).time_in_call_secs
+                  : undefined,
+            }
+          : {}),
       };
     }
   }
@@ -211,6 +235,7 @@ function pickMessage(event: unknown): Omit<Turn, 'id' | 'createdAt'> | null {
     if (typeof response === 'string' && response.trim()) {
       return {
         role: 'agent',
+        source: 'agent_response',
         text: response,
       };
     }
@@ -222,6 +247,8 @@ function pickMessage(event: unknown): Omit<Turn, 'id' | 'createdAt'> | null {
 export default function InterviewPageClient({ interviewId }: { interviewId: string }) {
   const conversationRef = useRef<ElevenConversationType | null>(null);
   const rafRef = useRef<number | null>(null);
+  const activeConversationIdRef = useRef<string | null>(null);
+  const sessionStorageKey = `interview-session:${interviewId}`;
   const [interviewRecord, setInterviewRecord] = useState<CandidateInterviewView | null>(null);
   const [isLoadingRecord, setIsLoadingRecord] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -229,6 +256,15 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
   const [statusText, setStatusText] = useState('disconnected');
   const [modeText, setModeText] = useState('listening');
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    return window.sessionStorage.getItem(sessionStorageKey);
+  });
+  const [sessionSnapshot, setSessionSnapshot] = useState<InterviewConversationSnapshot | null>(null);
+  const [isPollingSessionSnapshot, setIsPollingSessionSnapshot] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [audioDevices, setAudioDevices] = useState<AudioDeviceOption[]>([]);
   const [selectedInputDeviceId, setSelectedInputDeviceId] = useState('default');
@@ -240,6 +276,21 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
   const showExpandedSidebar = !isSidebarCollapsed || isMobileSidebarOpen;
   const interviewStage = formatInterviewStage(statusText, modeText);
   const connectionSummary = formatStatusSummary(statusText);
+  const analysisStatusText = useMemo(() => {
+    if (!activeConversationId) {
+      return '未开始';
+    }
+
+    if (sessionSnapshot?.webhookReceivedAt || sessionSnapshot?.status === 'done') {
+      return '分析完成';
+    }
+
+    if (statusText === 'disconnected') {
+      return isPollingSessionSnapshot ? '正在等待分析结果' : '等待同步';
+    }
+
+    return '通话中';
+  }, [activeConversationId, isPollingSessionSnapshot, sessionSnapshot, statusText]);
 
   const selectedDeviceLabel = useMemo(() => {
     if (selectedInputDeviceId === 'default') {
@@ -266,6 +317,100 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
 
     return `${interviewRecord.resumeProfile.name} · ${interviewRecord.resumeProfile.targetRoles[0] ?? interviewRecord.targetRole ?? '待识别岗位'} · ${interviewRecord.interviewQuestions.length} 道题`;
   }, [interviewRecord]);
+
+  const latestSummaryText = sessionSnapshot?.transcriptSummary ?? '面试结束后，这里会显示 ElevenLabs 回传的总结。';
+
+  const setPersistedConversationId = useCallback((conversationId: string | null) => {
+    activeConversationIdRef.current = conversationId;
+    setActiveConversationId(conversationId);
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (conversationId) {
+      window.sessionStorage.setItem(sessionStorageKey, conversationId);
+    }
+    else {
+      window.sessionStorage.removeItem(sessionStorageKey);
+    }
+  }, [sessionStorageKey]);
+
+  const applySessionSnapshot = useCallback((snapshot: InterviewConversationSnapshot | null) => {
+    setSessionSnapshot(snapshot);
+
+    if (!snapshot) {
+      setTurns([]);
+      return;
+    }
+
+    setTurns(snapshot.turns.map(toClientTurn));
+  }, []);
+
+  const fetchSessionSnapshot = useCallback(async (conversationId: string) => {
+    const response = await fetch(`/api/interview/${interviewId}/session/${conversationId}`, { cache: 'no-store' });
+    const payload = (await response.json().catch(() => null)) as (InterviewConversationSnapshot & { error?: string }) | null;
+
+    if (!response.ok || !payload || 'error' in payload) {
+      throw new Error(payload?.error ?? '会话记录暂不可用');
+    }
+
+    applySessionSnapshot(payload);
+    return payload;
+  }, [applySessionSnapshot, interviewId]);
+
+  const syncSession = useCallback(async (payload: {
+    conversationId?: string | null
+    status?: string
+    mode?: string
+    error?: string
+    turn?: {
+      id: string
+      role: 'agent' | 'user'
+      text: string
+      source: string
+      createdAt: number
+      timeInCallSecs?: number
+    }
+  }) => {
+    const conversationId = payload.conversationId ?? activeConversationIdRef.current;
+
+    if (!conversationId) {
+      return null;
+    }
+
+    try {
+      const response = await fetch(`/api/interview/${interviewId}/session-sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          conversationId,
+          ...(payload.status ? { status: payload.status } : {}),
+          ...(payload.mode ? { mode: payload.mode } : {}),
+          ...(payload.error ? { error: payload.error } : {}),
+          ...(payload.turn ? { turn: payload.turn } : {}),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('会话同步失败');
+      }
+
+      const body = (await response.json().catch(() => null)) as { snapshot?: InterviewConversationSnapshot | null } | null;
+
+      if (body?.snapshot) {
+        setSessionSnapshot(body.snapshot);
+      }
+
+      return body?.snapshot ?? null;
+    }
+    catch (error) {
+      console.error(error);
+      return null;
+    }
+  }, [interviewId]);
 
   const stopMeterLoop = useCallback(() => {
     if (rafRef.current != null) {
@@ -363,6 +508,21 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
   }, [interviewId]);
 
   useEffect(() => {
+    activeConversationIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    if (!activeConversationId || sessionSnapshot || turns.length > 0) {
+      return;
+    }
+
+    void fetchSessionSnapshot(activeConversationId).catch(() => {
+      setPersistedConversationId(null);
+      applySessionSnapshot(null);
+    });
+  }, [activeConversationId, applySessionSnapshot, fetchSessionSnapshot, sessionSnapshot, setPersistedConversationId, turns.length]);
+
+  useEffect(() => {
     void loadAudioDevices(false);
 
     const mediaDevices = navigator.mediaDevices;
@@ -389,6 +549,49 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
     };
   }, [stopMeterLoop]);
 
+  useEffect(() => {
+    if (!activeConversationId || statusText !== 'disconnected') {
+      return;
+    }
+
+    let isCancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const pollSnapshot = async () => {
+      if (isCancelled) {
+        return;
+      }
+
+      setIsPollingSessionSnapshot(true);
+
+      try {
+        const snapshot = await fetchSessionSnapshot(activeConversationId);
+
+        if (snapshot.webhookReceivedAt || snapshot.status === 'done' || snapshot.status === 'failed') {
+          setIsPollingSessionSnapshot(false);
+          return;
+        }
+      }
+      catch {
+      }
+
+      if (!isCancelled) {
+        timer = setTimeout(pollSnapshot, 3000);
+      }
+    };
+
+    void pollSnapshot();
+
+    return () => {
+      isCancelled = true;
+      setIsPollingSessionSnapshot(false);
+
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [activeConversationId, fetchSessionSnapshot, statusText]);
+
   async function startInterview() {
     if (conversationRef.current) {
       return;
@@ -401,6 +604,8 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
 
     setErrorText(null);
     setTurns([]);
+    applySessionSnapshot(null);
+    setPersistedConversationId(null);
     setStatusText('connecting');
     setInputLevel(0.08);
     setOutputLevel(0.08);
@@ -432,6 +637,7 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
         conversationToken: tokenPayload.token,
         dynamicVariables: {
           user_name: interviewRecord.candidateName,
+          interview_record_id: interviewRecord.id,
           candidate_profile: candidateProfileVariable,
           interview_questions: interviewQuestionsVariable,
         },
@@ -450,10 +656,12 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
           stopMeterLoop();
           setInputLevel(0.08);
           setOutputLevel(0.08);
+          void syncSession({ status: 'disconnected' });
         },
         onError: (error) => {
           const message = typeof error === 'string' ? error : '会话异常';
           setErrorText(message);
+          void syncSession({ error: message });
         },
         onMessage: (event) => {
           const picked = pickMessage(event);
@@ -462,20 +670,47 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
             return;
           }
 
+          const nextTurn = {
+            id: `${Date.now()}-${crypto.randomUUID()}`,
+            createdAt: Date.now(),
+            ...picked,
+          } satisfies Turn;
+
           setTurns(previous => [
             ...previous,
-            {
-              id: `${Date.now()}-${crypto.randomUUID()}`,
-              createdAt: Date.now(),
-              ...picked,
-            },
+            nextTurn,
           ]);
+
+          void syncSession({
+            turn: {
+              id: nextTurn.id,
+              role: nextTurn.role,
+              text: nextTurn.text,
+              source: nextTurn.source,
+              createdAt: nextTurn.createdAt,
+              ...(typeof nextTurn.timeInCallSecs === 'number' ? { timeInCallSecs: nextTurn.timeInCallSecs } : {}),
+            },
+          });
         },
-        onModeChange: ({ mode }) => setModeText(mode),
-        onStatusChange: ({ status }) => setStatusText(status),
+        onModeChange: ({ mode }) => {
+          setModeText(mode);
+          void syncSession({ mode });
+        },
+        onStatusChange: ({ status }) => {
+          setStatusText(status);
+          void syncSession({ status });
+        },
       });
 
       conversationRef.current = session;
+      const nextConversationId = session.getId();
+      setPersistedConversationId(nextConversationId);
+
+      await syncSession({
+        conversationId: nextConversationId,
+        status: connectedDuringSetup || session.isOpen() ? 'connected' : 'connecting',
+        mode: modeText,
+      });
 
       if (connectedDuringSetup || session.isOpen()) {
         startMeterLoop(session);
@@ -497,6 +732,7 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
     }
 
     setStatusText('disconnecting');
+    void syncSession({ status: 'disconnecting' });
 
     try {
       await activeConversation.endSession();
@@ -511,6 +747,7 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
       stopMeterLoop();
       setInputLevel(0.08);
       setOutputLevel(0.08);
+      void syncSession({ status: 'disconnected' });
     }
   }
 
@@ -645,6 +882,10 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
                           <p className='mt-1 font-medium text-sm'>{connectionSummary}</p>
                         </div>
                         <div className='px-1 py-1'>
+                          <p className='text-muted-foreground text-[11px]'>分析状态</p>
+                          <p className='mt-1 font-medium text-sm'>{analysisStatusText}</p>
+                        </div>
+                        <div className='px-1 py-1'>
                           <p className='text-muted-foreground text-[11px]'>当前设备</p>
                           <p className='mt-1 truncate font-medium text-sm'>{selectedDeviceLabel}</p>
                         </div>
@@ -666,6 +907,26 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
                     <section className='py-3'>
                       <p className='mb-3 font-medium text-sm'>对话摘要</p>
                       <div className='space-y-3'>
+                        <div>
+                          <p className='text-muted-foreground text-[11px]'>会话编号</p>
+                          <p className='mt-1 break-all text-sm leading-6'>
+                            {activeConversationId ?? '开始面试后自动生成'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className='text-muted-foreground text-[11px]'>最终总结</p>
+                          <p className='mt-1 text-sm leading-6'>
+                            {latestSummaryText}
+                          </p>
+                        </div>
+                        {sessionSnapshot?.callSuccessful
+                          ? (
+                              <div>
+                                <p className='text-muted-foreground text-[11px]'>通话判定</p>
+                                <p className='mt-1 text-sm leading-6'>{sessionSnapshot.callSuccessful}</p>
+                              </div>
+                            )
+                          : null}
                         <div>
                           <p className='text-muted-foreground text-[11px]'>最近一条追问</p>
                           <p className='mt-1 text-sm leading-6'>

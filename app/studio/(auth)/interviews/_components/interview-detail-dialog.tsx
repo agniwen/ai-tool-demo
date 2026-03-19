@@ -1,9 +1,12 @@
 'use client';
 
+import type { StudioInterviewConversationReport } from '@/lib/interview-session';
 import type { StudioInterviewRecord } from '@/lib/studio-interviews';
-import { CopyIcon, LinkIcon } from 'lucide-react';
+import { CopyIcon, LinkIcon, MessageSquareTextIcon } from 'lucide-react';
 import { useEffect, useEffectEvent, useState } from 'react';
 import { toast } from 'sonner';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
@@ -86,6 +89,55 @@ function truncateText(value: string | number | null | undefined, maxLength = 320
   return `${text.slice(0, maxLength)}...`;
 }
 
+function formatReportStatus(status: string) {
+  switch (status) {
+    case 'done':
+      return '已完成';
+    case 'failed':
+      return '失败';
+    case 'connected':
+      return '进行中';
+    case 'disconnected':
+      return '已断开';
+    case 'connecting':
+      return '连接中';
+    default:
+      return status || '未知';
+  }
+}
+
+function getReportBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+  switch (status) {
+    case 'done':
+      return 'default';
+    case 'failed':
+      return 'destructive';
+    case 'connected':
+      return 'secondary';
+    default:
+      return 'outline';
+  }
+}
+
+function renderKeyValueEntries(entries: Record<string, unknown>) {
+  const items = Object.entries(entries).filter(([, value]) => value !== null && value !== undefined && value !== '');
+
+  if (items.length === 0) {
+    return <p className='text-muted-foreground text-sm'>暂无结构化结果。</p>;
+  }
+
+  return (
+    <div className='space-y-2'>
+      {items.map(([key, value]) => (
+        <div className='rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-sm' key={key}>
+          <p className='font-medium'>{key}</p>
+          <p className='mt-1 break-words text-muted-foreground leading-relaxed'>{typeof value === 'string' ? value : JSON.stringify(value)}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DetailRow({
   label,
   value,
@@ -113,6 +165,7 @@ export function InterviewDetailDialog({
   recordId: string | null
 }) {
   const [record, setRecord] = useState<StudioInterviewRecord | null>(null);
+  const [reports, setReports] = useState<StudioInterviewConversationReport[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const closeDialog = useEffectEvent(() => onOpenChange(false));
 
@@ -126,18 +179,30 @@ export function InterviewDetailDialog({
     async function loadRecord() {
       setIsLoading(true);
       setRecord(null);
+      setReports([]);
 
       try {
-        const response = await fetch(`/api/studio/interviews/${recordId}`, {
-          signal: controller.signal,
-        });
-        const payload = (await response.json().catch(() => null)) as StudioInterviewRecord | { error?: string } | null;
+        const [recordResponse, reportsResponse] = await Promise.all([
+          fetch(`/api/studio/interviews/${recordId}`, {
+            signal: controller.signal,
+          }),
+          fetch(`/api/studio/interviews/${recordId}/reports`, {
+            signal: controller.signal,
+          }),
+        ]);
+        const recordPayload = (await recordResponse.json().catch(() => null)) as StudioInterviewRecord | { error?: string } | null;
+        const reportsPayload = (await reportsResponse.json().catch(() => null)) as StudioInterviewConversationReport[] | { error?: string } | null;
 
-        if (!response.ok || !payload || 'error' in payload) {
-          throw new Error(payload && 'error' in payload ? payload.error ?? '加载详情失败' : '加载详情失败');
+        if (!recordResponse.ok || !recordPayload || 'error' in recordPayload) {
+          throw new Error(recordPayload && 'error' in recordPayload ? recordPayload.error ?? '加载详情失败' : '加载详情失败');
         }
 
-        setRecord(payload as StudioInterviewRecord);
+        if (!reportsResponse.ok || !reportsPayload || !Array.isArray(reportsPayload)) {
+          throw new Error(reportsPayload && !Array.isArray(reportsPayload) ? reportsPayload.error ?? '加载面试报告失败' : '加载面试报告失败');
+        }
+
+        setRecord(recordPayload as StudioInterviewRecord);
+        setReports(reportsPayload);
       }
       catch (error) {
         if (controller.signal.aborted) {
@@ -183,6 +248,7 @@ export function InterviewDetailDialog({
   const visibleSkills = skills.slice(0, 40);
   const visiblePersonalStrengths = personalStrengths.slice(0, 20);
   const visibleSchools = schools.slice(0, 20);
+  const latestReport = reports[0] ?? null;
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -219,6 +285,7 @@ export function InterviewDetailDialog({
                   <Tabs className='space-y-6' defaultValue='overview' key={recordId ?? 'empty'}>
                     <TabsList>
                       <TabsTrigger value='overview'>概览</TabsTrigger>
+                      <TabsTrigger value='reports'>面试报告</TabsTrigger>
                       <TabsTrigger value='questions'>AI 题目</TabsTrigger>
                       <TabsTrigger value='experience'>经历</TabsTrigger>
                     </TabsList>
@@ -293,6 +360,152 @@ export function InterviewDetailDialog({
                             {truncateText(record.notes, 600) || '暂无备注'}
                           </p>
                         </div>
+
+                        <div className='rounded-2xl border border-border/60 bg-background p-5'>
+                          <div className='flex items-center justify-between gap-3'>
+                            <h3 className='font-medium text-sm'>最近一次面试结果</h3>
+                            <Badge variant={latestReport ? getReportBadgeVariant(latestReport.status) : 'outline'}>
+                              {latestReport ? formatReportStatus(latestReport.status) : '暂无报告'}
+                            </Badge>
+                          </div>
+                          <p className='mt-3 text-muted-foreground text-sm leading-relaxed'>
+                            {latestReport?.transcriptSummary ?? '候选人完成面试后，这里会显示 ElevenLabs 回传的总结。'}
+                          </p>
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value='reports'>
+                      <div className='space-y-6'>
+                        <div className='grid gap-4 md:grid-cols-4'>
+                          <div className='rounded-2xl border border-border/60 bg-background p-4'>
+                            <p className='text-muted-foreground text-xs'>面试次数</p>
+                            <p className='mt-2 font-semibold text-2xl'>{reports.length}</p>
+                          </div>
+                          <div className='rounded-2xl border border-border/60 bg-background p-4'>
+                            <p className='text-muted-foreground text-xs'>已完成</p>
+                            <p className='mt-2 font-semibold text-2xl'>{reports.filter(report => report.status === 'done').length}</p>
+                          </div>
+                          <div className='rounded-2xl border border-border/60 bg-background p-4'>
+                            <p className='text-muted-foreground text-xs'>失败</p>
+                            <p className='mt-2 font-semibold text-2xl'>{reports.filter(report => report.status === 'failed').length}</p>
+                          </div>
+                          <div className='rounded-2xl border border-border/60 bg-background p-4'>
+                            <p className='text-muted-foreground text-xs'>累计对话轮次</p>
+                            <p className='mt-2 font-semibold text-2xl'>{reports.reduce((sum, report) => sum + report.turnCount, 0)}</p>
+                          </div>
+                        </div>
+
+                        {reports.length === 0
+                          ? (
+                              <div className='flex min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/20 px-6 py-10 text-center'>
+                                <MessageSquareTextIcon className='size-8 text-muted-foreground' />
+                                <p className='mt-4 font-medium text-sm'>暂无面试报告</p>
+                                <p className='mt-2 max-w-xl text-muted-foreground text-sm leading-relaxed'>
+                                  候选人开始并结束语音面试后，这里会展示逐场面试的总结、状态和完整对话记录。
+                                </p>
+                              </div>
+                            )
+                          : (
+                              <Accordion className='space-y-4' collapsible type='single'>
+                                {reports.map((report) => {
+                                  const startedAt = formatDateTime(report.startedAt ?? report.createdAt);
+                                  const endedAt = formatDateTime(report.endedAt ?? report.updatedAt);
+
+                                  return (
+                                    <AccordionItem className='overflow-hidden rounded-2xl border border-border/60 bg-background px-0' key={report.conversationId} value={report.conversationId}>
+                                      <AccordionTrigger className='px-5 py-4 hover:no-underline'>
+                                        <div className='min-w-0 flex-1 text-left'>
+                                          <div className='flex flex-wrap items-center gap-2'>
+                                            <p className='font-medium text-sm'>{startedAt}</p>
+                                            <Badge variant={getReportBadgeVariant(report.status)}>{formatReportStatus(report.status)}</Badge>
+                                            {report.callSuccessful
+                                              ? <Badge variant='outline'>{report.callSuccessful}</Badge>
+                                              : null}
+                                          </div>
+                                          <p className='mt-2 line-clamp-2 text-muted-foreground text-sm leading-relaxed'>
+                                            {report.transcriptSummary ?? report.latestError ?? '暂无总结，等待后续同步。'}
+                                          </p>
+                                        </div>
+                                      </AccordionTrigger>
+                                      <AccordionContent className='px-5 pb-5'>
+                                        <div className='grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(320px,0.75fr)]'>
+                                          <div className='space-y-4'>
+                                            <div className='rounded-2xl border border-border/60 bg-muted/20 p-4'>
+                                              <h4 className='font-medium text-sm'>会话概览</h4>
+                                              <div className='mt-3 grid gap-2 text-sm'>
+                                                <DetailRow label='会话 ID' value={<span className='break-all'>{report.conversationId}</span>} />
+                                                <DetailRow label='开始时间' value={startedAt} />
+                                                <DetailRow label='结束时间' value={endedAt} />
+                                                <DetailRow label='消息统计' value={`共 ${report.turnCount} 条 · 候选人 ${report.userTurnCount} 条 · 面试官 ${report.agentTurnCount} 条`} />
+                                                <DetailRow label='同步时间' value={formatDateTime(report.lastSyncedAt)} />
+                                                <DetailRow label='Webhook' value={report.webhookReceivedAt ? formatDateTime(report.webhookReceivedAt) : '未收到'} />
+                                              </div>
+                                            </div>
+
+                                            <div className='rounded-2xl border border-border/60 bg-background p-4'>
+                                              <h4 className='font-medium text-sm'>最终总结</h4>
+                                              <p className='mt-3 text-muted-foreground text-sm leading-relaxed'>
+                                                {report.transcriptSummary ?? '暂无总结。'}
+                                              </p>
+                                              {report.latestError
+                                                ? (
+                                                    <div className='mt-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive text-sm'>
+                                                      {report.latestError}
+                                                    </div>
+                                                  )
+                                                : null}
+                                            </div>
+
+                                            <div className='rounded-2xl border border-border/60 bg-background p-4'>
+                                              <h4 className='font-medium text-sm'>结构化结果</h4>
+                                              <div className='mt-4 grid gap-4 xl:grid-cols-2'>
+                                                <div>
+                                                  <p className='mb-2 text-muted-foreground text-xs'>评估指标</p>
+                                                  {renderKeyValueEntries(report.evaluationCriteriaResults)}
+                                                </div>
+                                                <div>
+                                                  <p className='mb-2 text-muted-foreground text-xs'>数据采集</p>
+                                                  {renderKeyValueEntries(report.dataCollectionResults)}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          <div className='rounded-2xl border border-border/60 bg-background p-4'>
+                                            <h4 className='font-medium text-sm'>对话记录</h4>
+                                            <div className='mt-4 space-y-3'>
+                                              {report.turns.length > 0
+                                                ? report.turns.map(turn => (
+                                                    <div className='rounded-xl border border-border/60 bg-muted/20 p-3' key={turn.id}>
+                                                      <div className='flex flex-wrap items-center gap-2 text-xs'>
+                                                        <Badge variant={turn.role === 'user' ? 'outline' : 'secondary'}>
+                                                          {turn.role === 'user' ? '候选人' : '面试官'}
+                                                        </Badge>
+                                                        <span className='text-muted-foreground'>{formatDateTime(turn.createdAt)}</span>
+                                                        {typeof turn.timeInCallSecs === 'number'
+                                                          ? (
+                                                              <span className='text-muted-foreground'>
+                                                                通话
+                                                                {turn.timeInCallSecs}
+                                                                s
+                                                              </span>
+                                                            )
+                                                          : null}
+                                                      </div>
+                                                      <p className='mt-2 text-sm leading-relaxed'>{turn.message}</p>
+                                                    </div>
+                                                  ))
+                                                : <p className='text-muted-foreground text-sm'>暂无对话记录。</p>}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </AccordionContent>
+                                    </AccordionItem>
+                                  );
+                                })}
+                              </Accordion>
+                            )}
                       </div>
                     </TabsContent>
 

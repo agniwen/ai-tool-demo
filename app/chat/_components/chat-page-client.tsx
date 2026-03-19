@@ -132,7 +132,7 @@ const NEW_CHAT_TITLE = '新对话';
 const GENERATING_CHAT_TITLE = '生成中...';
 const MAX_CHAT_TITLE_LENGTH = 28;
 const WHITESPACE_REGEX = /\s+/;
-const INPUT_APPEND_PUNCTUATION_REGEX = /[，。,\.]$/;
+const INPUT_APPEND_PUNCTUATION_REGEX = /[，。,.]$/;
 
 function getInitials(name?: string | null, email?: string | null) {
   const source = (name ?? email ?? '').trim();

@@ -135,3 +135,57 @@ export const studioInterviewSchedule = pgTable(
     index('studio_interview_schedule_sort_idx').on(table.interviewRecordId, table.sortOrder),
   ],
 );
+
+export const interviewConversation = pgTable(
+  'interview_conversation',
+  {
+    conversationId: text('conversation_id').primaryKey(),
+    interviewRecordId: text('interview_record_id').references(() => studioInterview.id, { onDelete: 'set null' }),
+    agentId: text('agent_id'),
+    status: text('status').notNull().default('initiated'),
+    mode: text('mode'),
+    transcript: jsonb('transcript').$type<import('@/lib/interview-session').InterviewTranscriptTurn[]>().notNull().default([]),
+    transcriptSummary: text('transcript_summary'),
+    callSuccessful: text('call_successful'),
+    evaluationCriteriaResults: jsonb('evaluation_criteria_results').$type<Record<string, unknown>>().notNull().default({}),
+    dataCollectionResults: jsonb('data_collection_results').$type<Record<string, unknown>>().notNull().default({}),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    dynamicVariables: jsonb('dynamic_variables').$type<Record<string, unknown>>().notNull().default({}),
+    latestError: text('latest_error'),
+    startedAt: timestamp('started_at'),
+    endedAt: timestamp('ended_at'),
+    webhookReceivedAt: timestamp('webhook_received_at'),
+    lastSyncedAt: timestamp('last_synced_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  table => [
+    index('interview_conversation_record_idx').on(table.interviewRecordId),
+    index('interview_conversation_status_idx').on(table.status),
+    index('interview_conversation_updated_at_idx').on(table.updatedAt),
+  ],
+);
+
+export const interviewConversationTurn = pgTable(
+  'interview_conversation_turn',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => interviewConversation.conversationId, { onDelete: 'cascade' }),
+    interviewRecordId: text('interview_record_id').references(() => studioInterview.id, { onDelete: 'set null' }),
+    role: text('role').$type<'agent' | 'user'>().notNull(),
+    message: text('message').notNull(),
+    source: text('source').notNull().default('client_event'),
+    timeInCallSecs: integer('time_in_call_secs'),
+    createdAt: timestamp('created_at').notNull(),
+    receivedAt: timestamp('received_at').defaultNow().notNull(),
+  },
+  table => [
+    index('interview_conversation_turn_conversation_idx').on(table.conversationId, table.createdAt),
+    index('interview_conversation_turn_record_idx').on(table.interviewRecordId, table.createdAt),
+  ],
+);

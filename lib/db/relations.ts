@@ -25,10 +25,29 @@ export const relations = defineRelations(schema, r => ({
       to: r.user.id,
     }),
     scheduleEntries: r.many.studioInterviewSchedule(),
+    conversations: r.many.interviewConversation(),
+    conversationTurns: r.many.interviewConversationTurn(),
   },
   studioInterviewSchedule: {
     interviewRecord: r.one.studioInterview({
       from: r.studioInterviewSchedule.interviewRecordId,
+      to: r.studioInterview.id,
+    }),
+  },
+  interviewConversation: {
+    interviewRecord: r.one.studioInterview({
+      from: r.interviewConversation.interviewRecordId,
+      to: r.studioInterview.id,
+    }),
+    turns: r.many.interviewConversationTurn(),
+  },
+  interviewConversationTurn: {
+    conversation: r.one.interviewConversation({
+      from: r.interviewConversationTurn.conversationId,
+      to: r.interviewConversation.conversationId,
+    }),
+    interviewRecord: r.one.studioInterview({
+      from: r.interviewConversationTurn.interviewRecordId,
       to: r.studioInterview.id,
     }),
   },
