@@ -121,6 +121,7 @@ const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
 const CHAT_REQUEST_TIMEOUT_MS = 8 * 60 * 1000;
 
 const QUICK_SUGGESTIONS = [
+  '列出候选人的优点、缺点、风险关键项目，团队定位、职级定级。',
   '给我一个简历筛选的评分标准（100分制）。',
   '请输出候选人的亮点、风险点和追问问题。',
   '这份简历是否建议进入面试？请给出理由。',
@@ -131,6 +132,7 @@ const NEW_CHAT_TITLE = '新对话';
 const GENERATING_CHAT_TITLE = '生成中...';
 const MAX_CHAT_TITLE_LENGTH = 28;
 const WHITESPACE_REGEX = /\s+/;
+const INPUT_APPEND_PUNCTUATION_REGEX = /[，。,\.]$/;
 
 function getInitials(name?: string | null, email?: string | null) {
   const source = (name ?? email ?? '').trim();
@@ -146,6 +148,20 @@ function getInitials(name?: string | null, email?: string | null) {
   }
 
   return source.slice(0, 2).toUpperCase();
+}
+
+function appendSuggestionToInput(currentInput: string, suggestion: string) {
+  const normalizedInput = currentInput.trimEnd();
+
+  if (!normalizedInput) {
+    return suggestion;
+  }
+
+  const separator = INPUT_APPEND_PUNCTUATION_REGEX.test(normalizedInput)
+    ? ''
+    : '，';
+
+  return `${normalizedInput}${separator}${suggestion}`;
 }
 
 function isTextPart(part: MessagePart): part is Extract<MessagePart, { type: 'text' }> {
@@ -932,7 +948,7 @@ export default function ChatPageClient({
               disabled={isStreaming}
               key={suggestion}
               onClick={(text) => {
-                void sendMessageToChat({ text });
+                setInput(currentInput => appendSuggestionToInput(currentInput, text));
               }}
               suggestion={suggestion}
             />
