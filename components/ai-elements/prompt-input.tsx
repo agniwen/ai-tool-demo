@@ -382,6 +382,9 @@ export type PromptInputProps = Omit<
   maxFiles?: number
   // bytes
   maxFileSize?: number
+  dragOverlay?: ReactNode
+  dragOverlayClassName?: string
+  onGlobalDropOutside?: () => void
   onError?: (err: {
     code: 'max_files' | 'max_file_size' | 'accept'
     message: string
@@ -400,6 +403,9 @@ export function PromptInput({
   syncHiddenInput,
   maxFiles,
   maxFileSize,
+  dragOverlay,
+  dragOverlayClassName,
+  onGlobalDropOutside,
   onError,
   onSubmit,
   children,
@@ -416,6 +422,7 @@ export function PromptInput({
   // ----- Local attachments (only used when no provider)
   const [items, setItems] = useState<(FileUIPart & { id: string })[]>([]);
   const files = usingProvider ? controller.attachments.files : items;
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
 
   // ----- Local referenced sources (always local to PromptInput)
   const [referencedSources, setReferencedSources] = useState<
@@ -432,6 +439,17 @@ export function PromptInput({
   const openFileDialogLocal = useCallback(() => {
     inputRef.current?.click();
   }, []);
+
+  const dragDepthRef = useRef(0);
+
+  const setDraggingState = useCallback((nextState: boolean) => {
+    setIsDraggingFiles(nextState);
+  }, []);
+
+  const resetDraggingState = useCallback(() => {
+    dragDepthRef.current = 0;
+    setDraggingState(false);
+  }, [setDraggingState]);
 
   const matchesAccept = useCallback(
     (f: File) => {
@@ -616,57 +634,130 @@ export function PromptInput({
     if (!form) {
       return;
     }
-    if (globalDrop) {
-      // when global drop is on, let the document-level handler own drops
-      return;
-    }
 
+    const onDragEnter = (e: DragEvent) => {
+      if (globalDrop) {
+        return;
+      }
+      if (!e.dataTransfer?.types?.includes('Files')) {
+        return;
+      }
+
+      dragDepthRef.current += 1;
+      setDraggingState(true);
+    };
     const onDragOver = (e: DragEvent) => {
       if (e.dataTransfer?.types?.includes('Files')) {
         e.preventDefault();
+        setDraggingState(true);
+      }
+    };
+    const onDragLeave = (e: DragEvent) => {
+      if (globalDrop) {
+        return;
+      }
+      if (!e.dataTransfer?.types?.includes('Files')) {
+        return;
+      }
+
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) {
+        setDraggingState(false);
       }
     };
     const onDrop = (e: DragEvent) => {
       if (e.dataTransfer?.types?.includes('Files')) {
         e.preventDefault();
       }
+      resetDraggingState();
       if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
         add(e.dataTransfer.files);
       }
     };
+    form.addEventListener('dragenter', onDragEnter);
     form.addEventListener('dragover', onDragOver);
+    form.addEventListener('dragleave', onDragLeave);
     form.addEventListener('drop', onDrop);
     return () => {
+      form.removeEventListener('dragenter', onDragEnter);
       form.removeEventListener('dragover', onDragOver);
+      form.removeEventListener('dragleave', onDragLeave);
       form.removeEventListener('drop', onDrop);
     };
-  }, [add, globalDrop]);
+  }, [add, globalDrop, resetDraggingState, setDraggingState]);
 
   useEffect(() => {
     if (!globalDrop) {
       return;
     }
 
+    const onDragEnter = (e: DragEvent) => {
+      if (!e.dataTransfer?.types?.includes('Files')) {
+        return;
+      }
+
+      dragDepthRef.current += 1;
+      setDraggingState(true);
+    };
     const onDragOver = (e: DragEvent) => {
       if (e.dataTransfer?.types?.includes('Files')) {
         e.preventDefault();
+        setDraggingState(true);
+      }
+    };
+    const onDragLeave = (e: DragEvent) => {
+      if (!e.dataTransfer?.types?.includes('Files')) {
+        return;
+      }
+
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) {
+        setDraggingState(false);
       }
     };
     const onDrop = (e: DragEvent) => {
       if (e.dataTransfer?.types?.includes('Files')) {
         e.preventDefault();
       }
+
+      const form = formRef.current;
+      const target = e.target;
+      const isDropInsideForm = form && target instanceof Node
+        ? form.contains(target)
+        : false;
+
+      resetDraggingState();
+
+      if (isDropInsideForm) {
+        return;
+      }
+
       if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-        add(e.dataTransfer.files);
+        onGlobalDropOutside?.();
       }
     };
+    document.addEventListener('dragenter', onDragEnter);
     document.addEventListener('dragover', onDragOver);
+    document.addEventListener('dragleave', onDragLeave);
     document.addEventListener('drop', onDrop);
     return () => {
+      document.removeEventListener('dragenter', onDragEnter);
       document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('dragleave', onDragLeave);
       document.removeEventListener('drop', onDrop);
     };
-  }, [add, globalDrop]);
+  }, [globalDrop, onGlobalDropOutside, resetDraggingState, setDraggingState]);
+
+  useEffect(() => {
+    const onWindowDragEnd = () => {
+      resetDraggingState();
+    };
+
+    window.addEventListener('dragend', onWindowDragEnd);
+    return () => {
+      window.removeEventListener('dragend', onWindowDragEnd);
+    };
+  }, [resetDraggingState]);
 
   useEffect(
     () => () => {
@@ -807,7 +898,22 @@ export function PromptInput({
         ref={formRef}
         {...props}
       >
-        <InputGroup className='overflow-hidden'>{children}</InputGroup>
+        <InputGroup className='overflow-hidden'>
+          {children}
+          {dragOverlay && isDraggingFiles
+            ? (
+                <div
+                  aria-hidden='true'
+                  className={cn(
+                    'pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-3',
+                    dragOverlayClassName,
+                  )}
+                >
+                  {dragOverlay}
+                </div>
+              )
+            : null}
+        </InputGroup>
       </form>
     </>
   );

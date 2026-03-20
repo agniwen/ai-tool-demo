@@ -29,6 +29,14 @@ export interface ResumeStructuredInfo {
   projectHighlights: string[]
   school: string | null
   skills: string[]
+  timelineSummary: ResumeTimelineSummary
+}
+
+export interface ResumeTimelineSummary {
+  currentStatus: string | null
+  dateRanges: string[]
+  estimatedExperienceYears: number | null
+  riskSignals: string[]
 }
 
 let workerConfigured = false;
@@ -58,6 +66,13 @@ const SKILL_SPLIT_REGEX = /[、,，;；/|·]/;
 const PROJECT_SECTION_HEADING_REGEX = /项目|projects?/i;
 const INTERNSHIP_SECTION_HEADING_REGEX = /实习|工作经历|experience|intern/i;
 const URL_REGEX = /(https?:\/\/[^\s)]+)/g;
+const DATE_RANGE_REGEX = /(20\d{2}(?:[./-]\d{1,2}|年\d{1,2}月?)?)\s*[至到\-~—–－]\s*(至今|现在|目前|present|current|20\d{2}(?:[./-]\d{1,2}|年\d{1,2}月?)?)/gi;
+const DATE_TOKEN_REGEX = /(20\d{2})(?:[./-](\d{1,2})|年(\d{1,2})月?)?/;
+const PRESENT_TOKEN_REGEX = /^(?:至今|现在|目前|present|current)$/i;
+const PROJECT_OR_WORK_SECTION_HEADING_REGEX = /工作经历|实习经历|职业经历|项目经历|experience|intern|project/i;
+const WORK_CONTEXT_REGEX = /公司|任职|岗位|负责|实习|工作|项目|研发|产品|运营/;
+const CURRENT_STATUS_MARKER_REGEX = /至今|现在|目前|present|current/i;
+const MAX_TIMELINE_RANGES = 12;
 
 async function ensureDomPolyfills() {
   const globalWithPdfPolyfills = globalThis as Record<string, unknown>;
@@ -154,6 +169,169 @@ function firstRegexMatch(text: string, pattern: RegExp, group = 1): string | nul
   const match = text.match(pattern);
   const value = match?.[group]?.trim();
   return value && value.length > 0 ? value : null;
+}
+
+function parseDateToken(token: string, now: Date) {
+  const normalized = token.trim();
+
+  if (PRESENT_TOKEN_REGEX.test(normalized)) {
+    return {
+      month: now.getMonth() + 1,
+      year: now.getFullYear(),
+    };
+  }
+
+  const match = normalized.match(DATE_TOKEN_REGEX);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const monthToken = match[2] ?? match[3];
+  const month = monthToken ? Number(monthToken) : 1;
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return null;
+  }
+
+  return { month, year };
+}
+
+function toMonthIndex(date: { year: number, month: number }) {
+  return date.year * 12 + (date.month - 1);
+}
+
+function extractTimelineSummary(resumeText: string): ResumeTimelineSummary {
+  const lines = resumeText
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean);
+  const now = new Date();
+  const dateRanges: string[] = [];
+  const parsedRanges: Array<{
+    end: number
+    isWorkLike: boolean
+    raw: string
+    start: number
+  }> = [];
+
+  lines.forEach((line) => {
+    const matches = [...line.matchAll(DATE_RANGE_REGEX)];
+
+    if (matches.length === 0) {
+      return;
+    }
+
+    const isWorkLike = PROJECT_OR_WORK_SECTION_HEADING_REGEX.test(line)
+      || WORK_CONTEXT_REGEX.test(line);
+
+    matches.forEach((match) => {
+      if (dateRanges.length >= MAX_TIMELINE_RANGES) {
+        return;
+      }
+
+      const startToken = match[1]?.trim();
+      const endToken = match[2]?.trim();
+      const raw = match[0]?.trim();
+
+      if (!startToken || !endToken || !raw || dateRanges.includes(raw)) {
+        return;
+      }
+
+      dateRanges.push(raw);
+
+      const start = parseDateToken(startToken, now);
+      const end = parseDateToken(endToken, now);
+
+      if (!start || !end) {
+        return;
+      }
+
+      parsedRanges.push({
+        end: toMonthIndex(end),
+        isWorkLike,
+        raw,
+        start: toMonthIndex(start),
+      });
+    });
+  });
+
+  const sortedRanges = parsedRanges
+    .filter(range => range.isWorkLike)
+    .sort((a, b) => a.start - b.start);
+  const riskSignals: string[] = [];
+
+  sortedRanges.forEach((range) => {
+    if (range.end < range.start) {
+      riskSignals.push(`时间区间可能有误：${range.raw}`);
+    }
+  });
+
+  for (let i = 1; i < sortedRanges.length; i += 1) {
+    const previous = sortedRanges[i - 1];
+    const current = sortedRanges[i];
+
+    if (!previous || !current) {
+      continue;
+    }
+
+    const gapMonths = current.start - previous.end - 1;
+    const overlapMonths = previous.end - current.start + 1;
+
+    if (gapMonths >= 6) {
+      riskSignals.push(`存在约 ${gapMonths} 个月的时间空档：${previous.raw} -> ${current.raw}`);
+    }
+
+    if (overlapMonths >= 2) {
+      riskSignals.push(`时间线存在重叠，需核实是否为兼职/并行项目：${previous.raw} 与 ${current.raw}`);
+    }
+  }
+
+  const shortStints = sortedRanges.filter(range => range.end >= range.start && (range.end - range.start + 1) <= 8);
+
+  if (shortStints.length >= 2) {
+    riskSignals.push(`检测到 ${shortStints.length} 段较短经历（8 个月内），需关注稳定性`);
+  }
+
+  const futureRanges = sortedRanges.filter(range => range.start > toMonthIndex({ month: now.getMonth() + 1, year: now.getFullYear() }) + 1);
+
+  if (futureRanges.length > 0) {
+    riskSignals.push('检测到未来时间段，需核实简历时间填写是否准确');
+  }
+
+  const mergedRanges: Array<{ end: number, start: number }> = [];
+
+  sortedRanges
+    .filter(range => range.end >= range.start)
+    .forEach((range) => {
+      const last = mergedRanges.at(-1);
+
+      if (!last || range.start > last.end + 1) {
+        mergedRanges.push({ end: range.end, start: range.start });
+        return;
+      }
+
+      last.end = Math.max(last.end, range.end);
+    });
+
+  const totalMonths = mergedRanges.reduce((sum, range) => sum + (range.end - range.start + 1), 0);
+  const estimatedExperienceYears = totalMonths > 0
+    ? Number((totalMonths / 12).toFixed(1))
+    : null;
+  const latestRange = sortedRanges.at(-1);
+  const currentStatus = latestRange?.raw && CURRENT_STATUS_MARKER_REGEX.test(latestRange.raw)
+    ? '最近一段经历显示候选人可能仍在职'
+    : sortedRanges.length > 0
+      ? '最近一段经历未明确显示为在职状态'
+      : null;
+
+  return {
+    currentStatus,
+    dateRanges,
+    estimatedExperienceYears,
+    riskSignals: uniqueStrings(riskSignals).slice(0, 6),
+  };
 }
 
 async function readPdfBytes(url: string): Promise<Uint8Array> {
@@ -365,6 +543,7 @@ export function extractResumeStructuredInfo(resumeText: string): ResumeStructure
   const links = uniqueStrings(
     Array.from(resumeText.matchAll(URL_REGEX), match => match[1] ?? ''),
   ).slice(0, 6);
+  const timelineSummary = extractTimelineSummary(resumeText);
 
   return {
     candidateName,
@@ -379,6 +558,7 @@ export function extractResumeStructuredInfo(resumeText: string): ResumeStructure
     projectHighlights,
     school,
     skills,
+    timelineSummary,
   };
 }
 

@@ -207,7 +207,7 @@ export function createExtractResumePdfStructuredInfoTool({
 }: PdfToolDependencies) {
   return tool({
     description:
-      '辅助工具：提取已上传 PDF 简历中的结构化候选人信息，包括联系方式、教育背景、技能和亮点。如果模型具备原生 PDF 理解能力，仍应以原生分析为主；但建议主动调用此工具，以生成更一致的结构化字段，用于评分和并排比较。',
+      '辅助工具：提取已上传 PDF 简历中的结构化候选人信息，包括联系方式、教育背景、技能、亮点以及时间线摘要。如果模型具备原生 PDF 理解能力，仍应以原生分析为主；但建议主动调用此工具，以生成更一致的结构化字段，用于评分、时间线核验和并排比较。',
     inputSchema: z.object({
       resumeName: z.string().optional().describe('简历文件名关键词或从 1 开始的序号'),
     }),

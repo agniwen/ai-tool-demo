@@ -23,6 +23,7 @@ import {
   UserIcon,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import {
   Attachment,
   AttachmentInfo,
@@ -121,7 +122,7 @@ const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
 const CHAT_REQUEST_TIMEOUT_MS = 8 * 60 * 1000;
 
 const QUICK_SUGGESTIONS = [
-  '列出候选人的优点、缺点、风险关键项目，团队定位、职级定级。',
+  '列出候选人的优点、缺点、风险关键项，团队定位、职级定级。',
   '给我一个简历筛选的评分标准（100分制）。',
   '请输出候选人的亮点、风险点和追问问题。',
   '这份简历是否建议进入面试？请给出理由。',
@@ -275,6 +276,18 @@ function ComposerAttachments() {
       ))}
     </Attachments>
   );
+}
+
+function UploadErrorReset({ onReset }: { onReset: () => void }) {
+  const attachments = usePromptInputAttachments();
+
+  useEffect(() => {
+    if (attachments.files.length > 0) {
+      onReset();
+    }
+  }, [attachments.files.length, onReset]);
+
+  return null;
 }
 
 function ToolPartView({ part }: { part: ToolUIPart | DynamicToolUIPart }) {
@@ -1201,9 +1214,21 @@ export default function ChatPageClient({
       <PromptInput
         accept='application/pdf'
         className='mt-4  **:data-[slot=input-group]:rounded-[1.3rem] **:data-[slot=input-group]:border-border/65 **:data-[slot=input-group]:bg-white **:data-[slot=input-group]:shadow-[0_8px_18px_-20px_rgba(60,44,23,0.5)]'
+        dragOverlay={(
+          <div className='flex h-full w-full items-center justify-center rounded-[1.15rem] border-2 border-dashed border-amber-500/60 bg-amber-50/95 px-6 py-8 text-center text-amber-900 backdrop-blur-[1px]'>
+            <div className='space-y-1'>
+              <p className='font-medium text-sm'>拖拽 PDF 简历到这里</p>
+              <p className='text-xs text-amber-900/75'>支持多个文件，系统只会加入 PDF 格式的文件</p>
+            </div>
+          </div>
+        )}
+        globalDrop
         maxFiles={8}
         maxFileSize={10 * 1024 * 1024}
         multiple
+        onGlobalDropOutside={() => {
+          toast.warning('请将简历拖拽到上传区域后再松开。');
+        }}
         onError={({ code }) => {
           if (code === 'accept') {
             setUploadErrorMessage('仅支持上传 PDF 文件。');
@@ -1235,6 +1260,8 @@ export default function ChatPageClient({
           setInput('');
         }}
       >
+        <UploadErrorReset onReset={() => setUploadErrorMessage(null)} />
+
         <PromptInputHeader>
           <ComposerAttachments />
         </PromptInputHeader>
