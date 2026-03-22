@@ -119,7 +119,7 @@ export async function analyzeResumeFile(file: File): Promise<ResumeAnalysisResul
 
   try {
     const { output } = await generateText({
-      model: provider('gemini-3-pro-preview'),
+      model: provider('gemini-3-flash-preview'),
       temperature: 0,
       output: Output.object({
         schema: resumeProfileSchema,
@@ -168,7 +168,7 @@ export async function analyzeResumeFile(file: File): Promise<ResumeAnalysisResul
 
   try {
     const { output } = await generateText({
-      model: provider('gemini-3-pro-preview'),
+      model: provider('gemini-3-flash-preview'),
       temperature: 0.3,
       output: Output.object({
         schema: generatedInterviewQuestionsSchema,
