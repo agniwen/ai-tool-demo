@@ -182,6 +182,7 @@ async function upsertConversation(options: {
   latestError?: string | null
   turn?: {
     id: string
+    eventId?: number
     role: 'agent' | 'user'
     text: string
     source: string
@@ -246,8 +247,12 @@ async function upsertConversation(options: {
     }
 
     if (options.turn) {
+      const persistedTurnId = typeof options.turn.eventId === 'number'
+        ? `${options.conversationId}:${options.turn.role}:${options.turn.source}:event:${options.turn.eventId}`
+        : options.turn.id;
+
       await tx.insert(interviewConversationTurn).values({
-        id: options.turn.id,
+        id: persistedTurnId,
         conversationId: options.conversationId,
         interviewRecordId: nextInterviewRecordId,
         role: options.turn.role,
@@ -337,6 +342,7 @@ export const interviewRouter = factory.createApp()
       turn: payload.turn
         ? {
             id: payload.turn.id,
+            eventId: payload.turn.eventId,
             role: payload.turn.role,
             text: payload.turn.text,
             source: payload.turn.source,

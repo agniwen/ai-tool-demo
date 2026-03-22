@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const interviewSessionTurnSchema = z.object({
   id: z.string().min(1),
+  eventId: z.number().int().nonnegative().optional(),
   role: z.enum(['agent', 'user']),
   text: z.string().min(1),
   source: z.string().min(1),

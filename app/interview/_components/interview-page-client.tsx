@@ -39,6 +39,7 @@ import { cn } from '@/lib/utils';
 
 interface Turn {
   id: string
+  eventId?: number
   role: 'agent' | 'user'
   text: string
   createdAt: number
@@ -56,6 +57,48 @@ const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
   minute: '2-digit',
   hour12: false,
 });
+
+const persistedEventIdPattern = /:event:(\d+)$/;
+
+function compareTurns(a: Turn, b: Turn) {
+  if (typeof a.eventId === 'number' && typeof b.eventId === 'number' && a.eventId !== b.eventId) {
+    return a.eventId - b.eventId;
+  }
+
+  if (typeof a.eventId === 'number' && typeof b.eventId === 'number') {
+    if (a.role !== b.role) {
+      return a.role === 'user' ? -1 : 1;
+    }
+
+    if (a.source !== b.source) {
+      return a.source.localeCompare(b.source);
+    }
+  }
+
+  if (typeof a.timeInCallSecs === 'number' && typeof b.timeInCallSecs === 'number' && a.timeInCallSecs !== b.timeInCallSecs) {
+    return a.timeInCallSecs - b.timeInCallSecs;
+  }
+
+  if (a.createdAt !== b.createdAt) {
+    return a.createdAt - b.createdAt;
+  }
+
+  return a.id.localeCompare(b.id);
+}
+
+function buildTurnEventKey(turn: Pick<Turn, 'role' | 'source' | 'eventId'>) {
+  if (typeof turn.eventId !== 'number') {
+    return null;
+  }
+
+  return `${turn.role}:${turn.source}:${turn.eventId}`;
+}
+
+function buildTurnId(turn: Pick<Turn, 'role' | 'source' | 'eventId'>, fallbackId: string) {
+  return buildTurnEventKey(turn)
+    ? `${turn.role}:${turn.source}:event:${turn.eventId}`
+    : fallbackId;
+}
 
 function formatInterviewStage(statusText: string, modeText: string) {
   if (statusText === 'connecting') {
@@ -184,8 +227,11 @@ function buildInterviewQuestionsVariable(interviewRecord: CandidateInterviewView
 }
 
 function toClientTurn(turn: InterviewConversationSnapshot['turns'][number]): Turn {
+  const eventIdMatch = turn.id.match(persistedEventIdPattern);
+
   return {
     id: turn.id,
+    ...(eventIdMatch ? { eventId: Number(eventIdMatch[1]) } : {}),
     role: turn.role,
     text: turn.message,
     createdAt: new Date(turn.createdAt).getTime(),
@@ -206,6 +252,7 @@ function pickMessage(event: unknown): Omit<Turn, 'id' | 'createdAt'> | null {
       role: value.source === 'user' ? 'user' : 'agent',
       source: 'conversation_message',
       text: value.message,
+      ...(typeof value.event_id === 'number' ? { eventId: value.event_id } : {}),
     };
   }
 
@@ -217,6 +264,9 @@ function pickMessage(event: unknown): Omit<Turn, 'id' | 'createdAt'> | null {
         role: 'user',
         source: 'user_transcript',
         text: transcript,
+        ...(typeof (value.user_transcription_event as { event_id?: unknown }).event_id === 'number'
+          ? { eventId: (value.user_transcription_event as { event_id: number }).event_id }
+          : {}),
         ...(typeof value.user_transcription_event === 'object' && value.user_transcription_event
           ? {
               timeInCallSecs:
@@ -237,6 +287,9 @@ function pickMessage(event: unknown): Omit<Turn, 'id' | 'createdAt'> | null {
         role: 'agent',
         source: 'agent_response',
         text: response,
+        ...(typeof (value.agent_response_event as { event_id?: unknown }).event_id === 'number'
+          ? { eventId: (value.agent_response_event as { event_id: number }).event_id }
+          : {}),
       };
     }
   }
@@ -248,6 +301,7 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
   const conversationRef = useRef<ElevenConversationType | null>(null);
   const rafRef = useRef<number | null>(null);
   const activeConversationIdRef = useRef<string | null>(null);
+  const seenEventKeysRef = useRef<Set<string>>(new Set());
   const sessionStorageKey = `interview-session:${interviewId}`;
   const [interviewRecord, setInterviewRecord] = useState<CandidateInterviewView | null>(null);
   const [isLoadingRecord, setIsLoadingRecord] = useState(true);
@@ -300,14 +354,19 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
     return audioDevices.find(device => device.deviceId === selectedInputDeviceId)?.label ?? '已选设备';
   }, [audioDevices, selectedInputDeviceId]);
 
-  const latestAgentTurn = useMemo(
-    () => turns.toReversed().find(turn => turn.role === 'agent') ?? null,
+  const orderedTurns = useMemo(
+    () => turns.toSorted(compareTurns),
     [turns],
   );
 
+  const latestAgentTurn = useMemo(
+    () => orderedTurns.toReversed().find(turn => turn.role === 'agent') ?? null,
+    [orderedTurns],
+  );
+
   const latestUserTurn = useMemo(
-    () => turns.toReversed().find(turn => turn.role === 'user') ?? null,
-    [turns],
+    () => orderedTurns.toReversed().find(turn => turn.role === 'user') ?? null,
+    [orderedTurns],
   );
 
   const resumeSummary = useMemo(() => {
@@ -340,11 +399,18 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
     setSessionSnapshot(snapshot);
 
     if (!snapshot) {
+      seenEventKeysRef.current = new Set();
       setTurns([]);
       return;
     }
 
-    setTurns(snapshot.turns.map(toClientTurn));
+    const nextTurns = snapshot.turns.map(toClientTurn);
+    seenEventKeysRef.current = new Set(
+      nextTurns
+        .map(turn => buildTurnEventKey(turn))
+        .filter((eventKey): eventKey is string => typeof eventKey === 'string'),
+    );
+    setTurns(nextTurns);
   }, []);
 
   const fetchSessionSnapshot = useCallback(async (conversationId: string) => {
@@ -366,6 +432,7 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
     error?: string
     turn?: {
       id: string
+      eventId?: number
       role: 'agent' | 'user'
       text: string
       source: string
@@ -604,6 +671,7 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
 
     setErrorText(null);
     setTurns([]);
+    seenEventKeysRef.current = new Set();
     applySessionSnapshot(null);
     setPersistedConversationId(null);
     setStatusText('connecting');
@@ -670,8 +738,18 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
             return;
           }
 
+          const eventKey = buildTurnEventKey(picked);
+
+          if (eventKey) {
+            if (seenEventKeysRef.current.has(eventKey)) {
+              return;
+            }
+
+            seenEventKeysRef.current.add(eventKey);
+          }
+
           const nextTurn = {
-            id: `${Date.now()}-${crypto.randomUUID()}`,
+            id: buildTurnId(picked, `${Date.now()}-${crypto.randomUUID()}`),
             createdAt: Date.now(),
             ...picked,
           } satisfies Turn;
@@ -684,6 +762,7 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
           void syncSession({
             turn: {
               id: nextTurn.id,
+              ...(typeof nextTurn.eventId === 'number' ? { eventId: nextTurn.eventId } : {}),
               role: nextTurn.role,
               text: nextTurn.text,
               source: nextTurn.source,
@@ -994,7 +1073,7 @@ export default function InterviewPageClient({ interviewId }: { interviewId: stri
                           title={interviewRecord ? '准备开始一轮面试' : isLoadingRecord ? '正在加载面试信息' : '面试链接不可用'}
                         />
                       )
-                    : turns.map(turn => (
+                    : orderedTurns.map(turn => (
                         <div key={turn.id}>
                           <p
                             className={cn(
